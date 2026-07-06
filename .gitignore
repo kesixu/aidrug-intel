@@ -1,0 +1,10 @@
+# AI for Science 大陆情报系统
+__pycache__/
+*.pyc
+*.pyo
+data/*.db
+.env
+.env.*
+*.bak.*
+workspace/
+.hermes/

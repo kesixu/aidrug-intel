@@ -1,0 +1,15 @@
+[Unit]
+Description=AI for Science 大陆情报系统
+After=network.target
+
+[Service]
+Type=simple
+User=oliver
+WorkingDirectory=/home/oliver/projects/aidrug
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
