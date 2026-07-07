@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.db import fts_upsert, session_scope
 from app.log import log_event, now_iso
-from app.models import Analysis, Item, Lens, Profile, Source
+from app.models import Analysis, Entity, Item, Lens, Profile, Source
 from app.textutil import simhash64, uid_for
 
 LENS_SEEDS = [
@@ -35,6 +35,18 @@ PROFILE_KEYWORDS = [
     "晶泰", "英矽", "深势", "百图生科", "融资", "临床试验", "药监",
 ]
 
+ENTITY_SEEDS = [  # (name, kind, aliases)
+    ("阿斯利康", "company", ["AstraZeneca", "AZ", "阿斯利康中国"]),
+    ("北京经济技术开发区", "park", ["亦庄", "北京亦庄", "经开区", "亦庄经开区", "北京经开区", "BDA"]),
+    ("晶泰科技", "company", ["XtalPi", "晶泰"]),
+    ("英矽智能", "company", ["Insilico Medicine", "英矽"]),
+    ("深势科技", "company", ["DP Technology", "深势"]),
+    ("百图生科", "company", ["BioMap"]),
+    ("北京市科委", "agency", ["北京市科学技术委员会", "市科委", "中关村管委会"]),
+    ("国家药监局", "agency", ["NMPA", "药监局"]),
+    ("科技部", "agency", ["MOST", "科学技术部"]),
+]
+
 _LEGACY_LENS_MAP = {  # v0.1 五维(0-5) → v2 lens(0-100)
     "az_beijing": "az_career",
     "trustpathbot": "trustpathbot",
@@ -59,6 +71,9 @@ def seed_lenses_profile(db: Session) -> None:
             db.add(Lens(id=lid, name=name, weight=weight, description=desc, enabled=True, position=pos))
     if db.get(Profile, 1) is None:
         db.add(Profile(id=1, narrative=PROFILE_NARRATIVE, keywords=PROFILE_KEYWORDS, updated_at=now_iso()))
+    for name, kind, aliases in ENTITY_SEEDS:
+        if db.query(Entity.id).filter(Entity.name == name).first() is None:
+            db.add(Entity(name=name, kind=kind, aliases=aliases, watch=True))
 
 
 def import_legacy(db: Session) -> int:
