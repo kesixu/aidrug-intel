@@ -1,272 +1,185 @@
-/* AI for Science 大陆情报系统 — 前端逻辑 */
-const API = '/api';
-let currentView = 'timeline';
-let currentData = [];
-let stats = {};
+/* 见微 · 外壳：路由、导航、主题、详情打开策略（抽屉 vs 右栏） */
+import { api } from './api.js';
+import { closeSheet, detailContent, initSheet, openSheet, toast } from './components.js';
+import { fmtDateCN, h } from './util.js';
+import * as today from './views/today.js';
+import * as feed from './views/feed.js';
+import * as chat from './views/chat.js';
+import * as insight from './views/insight.js';
+import * as me from './views/me.js';
 
-// ─── Init ───
-document.addEventListener('DOMContentLoaded', () => {
-  loadStats();
-  loadTimeline();
-  setupEventListeners();
-});
+const ICONS = {
+  today: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  feed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>',
+  insight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  me: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>',
+};
 
-function setupEventListeners() {
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchView(btn.dataset.view));
-  });
-  document.getElementById('search-input').addEventListener('input', debounce(loadTimeline, 300));
-  document.getElementById('filter-category').addEventListener('change', loadTimeline);
-  document.getElementById('filter-region').addEventListener('change', loadTimeline);
-  document.getElementById('filter-score').addEventListener('change', loadTimeline);
-}
+const VIEWS = [
+  { id: 'today', label: '今日', mod: today },
+  { id: 'feed', label: '情报', mod: feed },
+  { id: 'chat', label: '问', mod: chat, ask: true },
+  { id: 'insight', label: '洞察', mod: insight },
+  { id: 'me', label: '我的', mod: me },
+];
 
-// ─── View Switching ───
-function switchView(view) {
-  currentView = view;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-  document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
-  document.getElementById('view-' + view).style.display = 'block';
-  if (view === 'timeline') loadTimeline();
-  else if (view === 'lineages') loadLineages();
-  else if (view === 'sources') loadSources();
-}
+let current = null;
+let cleanup = null;
+let feedDetailPane = null;
 
-// ─── Stats ───
-async function loadStats() {
+const ctx = {
+  lensNames: {},
+  openItem,
+  openEntity,
+  setFeedDetailPane: (el) => { feedDetailPane = el; },
+};
+
+/* ── 主题 ── */
+window.__applyTheme = () => {
+  const pref = localStorage.getItem('theme') || 'auto';
+  const dark = pref === 'dark' || (pref === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0a0c10' : '#f5f3ee');
+};
+
+/* ── 详情打开 ── */
+async function openItem(id) {
   try {
-    const r = await fetch(API + '/stats');
-    stats = await r.json();
-    document.getElementById('stats-bar').innerHTML = `
-      <span>总计 <strong>${stats.total}</strong> 条</span>
-      <span class="highlight">高优先级 <strong>${stats.high_priority}</strong></span>
-      <span>需跟进 <strong>${stats.need_followup}</strong></span>
-    `;
-  } catch(e) { console.error(e); }
-}
-
-// ─── Timeline ───
-async function loadTimeline() {
-  const container = document.getElementById('timeline-container');
-  container.innerHTML = '<div class="loading">加载中...</div>';
-
-  const params = new URLSearchParams();
-  const search = document.getElementById('search-input').value.trim();
-  const category = document.getElementById('filter-category').value;
-  const region = document.getElementById('filter-region').value;
-  const score = document.getElementById('filter-score').value;
-
-  if (search) params.set('search', search);
-  if (category) params.set('category', category);
-  if (region) params.set('region_tier', region);
-  if (score) params.set('min_score', score);
-  params.set('limit', '100');
-
-  try {
-    const r = await fetch(API + '/intel?' + params.toString());
-    const j = await r.json();
-    currentData = j.data;
-    if (j.data.length === 0) {
-      container.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>暂无情报条目</p><p style="font-size:12px">系统将每日自动抓取新情报</p></div>';
-      return;
+    const d = await api.item(id);
+    if (!d.user?.read) api.feedback(id, 'read').catch(() => {});
+    const content = detailContent(d, { lensNames: ctx.lensNames, onOpenItem: openItem, onOpenEntity: openEntityByName });
+    const desktop = matchMedia('(min-width: 1024px)').matches;
+    if (desktop && current === 'feed' && feedDetailPane) {
+      feedDetailPane.replaceChildren(content);
+      feedDetailPane.scrollTop = 0;
+    } else {
+      openSheet(content);
     }
-    container.innerHTML = j.data.map(e => renderCard(e)).join('');
-    bindCardClicks();
-  } catch(e) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>加载失败</p></div>';
+  } catch (e) {
+    toast('加载条目失败：' + e.message);
   }
 }
 
-function renderCard(e) {
-  const rs = e.relevance_score || {};
-  const highPrio = rs.overall >= 4;
-  const midPrio = rs.overall >= 2 && rs.overall < 4;
-  const priorityClass = highPrio ? 'high-priority' : (midPrio ? 'medium-priority' : '');
-
-  const tagClass = {
-    '政策发布': 'tag-policy', '实施细则': 'tag-policy',
-    '资金申报': 'tag-funding', '人才政策': 'tag-talent',
-    '监管动态': 'tag-regulatory', '企业动态': 'tag-enterprise',
-    '学术会议': 'tag-academic', '产业数据': 'tag-industry',
-  };
-
-  const scores = [
-    { label: '综合', val: rs.overall },
-    { label: 'AZ', val: rs.az_beijing },
-    { label: 'TPB', val: rs.trustpathbot },
-    { label: '人才', val: rs.talent_program },
-    { label: '资金', val: rs.funding_opportunity },
-  ];
-
-  const scoreDots = scores.map(s => {
-    const cls = s.val >= 4 ? 'high' : (s.val >= 2 ? 'mid' : 'low');
-    const filled = Array(Math.min(s.val || 0, 5)).fill(0).map(() => `<span class="score-dot filled ${cls}"></span>`).join('');
-    const empty = Array(Math.max(5 - (s.val || 0), 0)).fill(0).map(() => `<span class="score-dot"></span>`).join('');
-    return `<span title="${s.label}: ${s.val || 0}/5" style="display:flex;gap:2px">${filled}${empty}</span>`;
-  }).join('');
-
-  const summary = e.ai_interpretation ? e.ai_interpretation.slice(0, 120) + (e.ai_interpretation.length > 120 ? '...' : '') : '';
-
-  const statusBadge = e.user_status ? `<span style="font-size:11px;background:#eee;padding:2px 6px;border-radius:10px">${e.user_status}</span>` : '';
-  const noteIcon = e.user_note ? ' 📝' : '';
-
-  return `
-<div class="intel-card ${priorityClass}" id="card-${e.id}">
-  <div class="card-header">
-    <div>
-      <div class="card-title" data-id="${e.id}">${escHtml(e.title)}${noteIcon}</div>
-      <div class="tag-row">
-        <span class="tag ${tagClass[e.category] || 'tag-policy'}">${e.category || '未分类'}</span>
-        <span class="tag tag-region">${e.region_tier || '未知'}</span>
-        ${statusBadge}
-      </div>
-    </div>
-    <div class="card-meta">
-      <div>${e.date_published || ''}</div>
-      <div style="margin-top:4px">${scoreDots}</div>
-    </div>
-  </div>
-  <div class="card-summary">${escHtml(summary)}</div>
-  <div class="card-expanded" id="expand-${e.id}">
-    ${e.original_excerpt ? '<h4>原文摘要</h4><p>' + escHtml(e.original_excerpt) + '</p>' : ''}
-    ${e.ai_interpretation ? '<h4>解读</h4><p>' + escHtml(e.ai_interpretation) + '</p>' : ''}
-    ${e.relevance_reasoning ? '<h4>关联分析</h4><p>' + escHtml(e.relevance_reasoning) + '</p>' : ''}
-    ${e.forecast ? '<h4>预判</h4><p>' + escHtml(e.forecast) + '</p>' : ''}
-    ${e.recommended_action ? '<div class="action-box"><strong>建议行动：</strong>' + escHtml(e.recommended_action) + '</div>' : ''}
-    ${e.source_url ? '<p style="font-size:11px;margin-top:4px">📎 <a href="' + escHtml(e.source_url) + '" target="_blank" rel="noopener">' + escHtml(e.source_url) + '</a></p>' : ''}
-    <div class="card-actions">
-      <select onchange="updateStatus('${e.id}', this.value)" style="font-size:12px">
-        <option value="">标记状态...</option>
-        <option value="已读" ${e.user_status === '已读' ? 'selected' : ''}>已读</option>
-        <option value="需跟进" ${e.user_status === '需跟进' ? 'selected' : ''}>需跟进</option>
-        <option value="已过时" ${e.user_status === '已过时' ? 'selected' : ''}>已过时</option>
-      </select>
-      <button onclick="addNote('${e.id}')">备注</button>
-    </div>
-  </div>
-</div>`;
-}
-
-function bindCardClicks() {
-  document.querySelectorAll('.card-title').forEach(el => {
-    el.addEventListener('click', () => {
-      const id = el.dataset.id;
-      const expand = document.getElementById('expand-' + id);
-      if (expand) expand.classList.toggle('show');
-    });
-  });
-}
-
-// ─── Status & Notes ───
-async function updateStatus(id, status) {
-  if (!status) return;
-  await fetch(API + '/intel/' + id, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({user_status: status})
-  });
-  loadTimeline();
-  loadStats();
-}
-
-function addNote(id) {
-  const note = prompt('添加备注：');
-  if (note === null) return;
-  fetch(API + '/intel/' + id, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({user_note: note})
-  }).then(() => loadTimeline());
-}
-
-// ─── Policy Lineages ───
-async function loadLineages() {
-  const container = document.getElementById('lineages-container');
-  container.innerHTML = '<div class="loading">加载中...</div>';
+async function openEntity(entityId) {
   try {
-    const r = await fetch(API + '/policy-lineages');
-    const j = await r.json();
-    if (j.data.length === 0) {
-      container.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>暂无政策家族追踪</p></div>';
-      return;
-    }
-    container.innerHTML = j.data.map(fam => {
-      const stages = ['发布', '官方解读', '配套细则', '资金申报', '结果产出'];
-      const doneStages = fam.stages || [];
-      const entriesHtml = fam.entries.map(e => `<div style="font-size:12px;margin-left:12px">• ${e.date} — ${escHtml(e.title)} [${e.stage}]</div>`).join('');
-      return `
-<div class="lineage-bar">
-  <h3>${escHtml(fam.name)}</h3>
-  <div class="lifecycle-track">
-    ${stages.map(s => {
-      const isDone = doneStages.includes(s) || doneStages.has(s);
-      return `<div class="lifecycle-step ${isDone ? 'done' : ''}"><div class="step-label">${s}</div></div>`;
-    }).join('')}
-  </div>
-  ${entriesHtml}
-</div>`;
-    }).join('');
-  } catch(e) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>加载失败</p></div>';
+    const { entity, items } = await api.entityTimeline(entityId);
+    const list = h('div', {},
+      h('div', { class: 'detail-title', style: 'font-size:17px' }, `${entity.name} · 时间线`),
+      h('div', { style: 'margin-bottom:10px' },
+        h('button', {
+          class: 'chip chip-btn' + (entity.watch ? ' active' : ''),
+          onclick: async (e) => {
+            const w = !entity.watch;
+            await api.watchEntity(entity.id, w);
+            entity.watch = w;
+            e.currentTarget.classList.toggle('active', w);
+            toast(w ? '已关注' : '已取消关注');
+          },
+        }, entity.watch ? '✓ 已关注' : '＋ 关注')),
+      items.length
+        ? items.map((it) => h('div', { class: 'lineage-entry', onclick: () => openItem(it.id) },
+            h('span', { class: 'dt' }, it.published_at),
+            h('span', {}, it.title)))
+        : h('p', { class: 'muted' }, '暂无相关条目'));
+    openSheet(list);
+  } catch (e) {
+    toast(e.message);
   }
 }
 
-// ─── Source Map ───
-function loadSources() {
-  const container = document.getElementById('sources-container');
-  const sources = {
-    'Tier 1 — 亦庄/BioPark 最高优先级': [
-      {name:'北京亦庄工作动态', url:'https://open.beijing.gov.cn/html/yizhuang/gzdt/', desc:'镜像亦庄微信公众号内容'},
-      {name:'开发区管委会政务公开', url:'https://kfqgw.beijing.gov.cn/zwgkkfq/', desc:'政策发布与公告'},
-      {name:'国际科创中心-亦庄专栏', url:'https://www.ncsti.gov.cn/kjdt/scyq/bjjjjskfq/jkdt/', desc:'科技动态'},
-      {name:'国家药监局 NMPA', url:'https://www.nmpa.gov.cn', desc:'关注京津冀分中心公告'},
-      {name:'AstraZeneca 中国', url:'https://www.astrazeneca.com.cn', desc:'AZ 中国 newsroom'},
-    ],
-    'Tier 2 — 市级（科委中关村）': [
-      {name:'北京市科委-政策文件', url:'https://kw.beijing.gov.cn/zwgk/zcwj/', desc:'核心政策来源'},
-      {name:'北京市科委-政策解读', url:'https://kw.beijing.gov.cn/zwgk/zcjd/', desc:'官方解读文件'},
-      {name:'国际科创中心-政策法规', url:'https://www.ncsti.gov.cn/zcfg/', desc:'政策总栏'},
-      {name:'首都之窗', url:'https://www.beijing.gov.cn', desc:'北京市政府门户'},
-    ],
-    'Tier 3 — 行业/媒体/学术': [
-      {name:'动脉网', url:'https://vcbeat.net', desc:'医药/医疗AI产业新闻'},
-      {name:'医药魔方', url:'https://pharmcube.com', desc:'医药行业数据'},
-      {name:'MICCAI', url:'https://conferences.miccai.org', desc:'医学影像AI顶会'},
-      {name:'ISBI', url:'https://biomedicalimaging.org', desc:'生物医学成像'},
-    ],
-    'Tier 4 — 全国背景（低频监控）': [
-      {name:'科技部', url:'https://www.most.gov.cn', desc:'国家科技政策'},
-      {name:'国家卫健委', url:'https://www.nhc.gov.cn', desc:'医疗卫生政策'},
-    ],
-  };
-
-  container.innerHTML = Object.entries(sources).map(([tier, items]) => {
-    const tierNum = tier.split(' ')[0].replace('Tier', 't');
-    return `
-<div class="source-tier ${tierNum}">
-  <h3>${tier}</h3>
-  <div class="source-grid">
-    ${items.map(s => `
-      <div class="source-card">
-        <div class="src-name">${escHtml(s.name)}</div>
-        <div class="src-url"><a href="${escHtml(s.url)}" target="_blank" rel="noopener">${escHtml(s.url)}</a></div>
-        <div class="src-desc">${escHtml(s.desc)}</div>
-      </div>
-    `).join('')}
-  </div>
-</div>`;
-  }).join('');
+async function openEntityByName(name) {
+  try {
+    const { entities } = await api.entities({ q: name });
+    const hit = entities.find((e) => e.name === name) || entities[0];
+    if (hit) return openEntity(hit.id);
+    const created = await api.createEntity({ name, kind: 'other' });
+    toast(`已创建并关注「${name}」`);
+    return openEntity(created.id);
+  } catch (e) {
+    toast(e.message);
+  }
 }
 
-// ─── Utils ───
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+/* ── 路由 ── */
+function navigate(viewId, { push = true } = {}) {
+  const view = VIEWS.find((v) => v.id === viewId) || VIEWS[0];
+  if (current === view.id) return;
+  cleanup?.();
+  cleanup = null;
+  closeSheet(true);
+  current = view.id;
+  if (push) location.hash = `#/${view.id}`;
+
+  document.querySelectorAll('[data-nav]').forEach((el) => {
+    el.classList.toggle('active', el.dataset.nav === view.id);
+  });
+  document.getElementById('top-title').textContent = view.label === '问' ? '问 · 情报分析师' : view.label;
+
+  const container = document.getElementById('view');
+  container.className = '';
+  container.id = 'view';
+  container.replaceChildren();
+  const ret = view.mod.render(container, ctx);
+  if (typeof ret === 'function') cleanup = ret;
+  window.scrollTo(0, 0);
 }
-function debounce(fn, ms) {
-  let timer;
-  return function(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), ms);
-  };
+
+function buildNav() {
+  const tabbar = document.getElementById('tabbar');
+  const sidenav = document.getElementById('side-nav');
+  for (const v of VIEWS) {
+    if (v.ask) {
+      tabbar.append(h('button', { class: 'tab tab-ask', 'data-nav': v.id, onclick: () => navigate(v.id) },
+        h('span', { class: 'ask-btn' }, '问')));
+    } else {
+      tabbar.append(h('button', { class: 'tab', 'data-nav': v.id, onclick: () => navigate(v.id) },
+        h('span', { html: ICONS[v.id] || '' }), v.label));
+    }
+    sidenav.append(h('button', { class: 'nav-item', 'data-nav': v.id, onclick: () => navigate(v.id) },
+      v.ask ? h('span', { class: 'brand-seal', style: 'width:19px;height:19px;font-size:11px;border-radius:5px' }, '问')
+            : h('span', { html: ICONS[v.id] || '' }),
+      v.label === '问' ? '问 · 分析师' : v.label));
+  }
 }
+
+async function loadSidebarFoot() {
+  try {
+    const s = await api.status();
+    const dot = document.getElementById('health-dot');
+    const down = s.sources.down || 0;
+    dot.className = 'health-dot' + (down > 1 ? ' bad' : (s.sources.degraded || down ? ' warn' : ''));
+    dot.title = `情报源：正常${s.sources.ok} 异常${(s.sources.degraded || 0) + down}`;
+    const foot = document.getElementById('side-foot');
+    if (foot) {
+      foot.replaceChildren(
+        h('div', { class: 'row' }, h('span', {}, '今日新增'), h('span', { class: 'mono' }, String(s.items.new_today))),
+        h('div', { class: 'row' }, h('span', {}, '本月费用'), h('span', { class: 'mono' }, `¥${s.llm.cost_month}`)),
+        h('div', { class: 'row' }, h('span', {}, '情报源'), h('span', { class: 'mono' }, `${s.sources.ok}✓ ${(s.sources.degraded || 0) + (s.sources.down || 0)}⚠`)));
+    }
+  } catch { /* 静默 */ }
+}
+
+async function boot() {
+  window.__applyTheme();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', window.__applyTheme);
+  initSheet();
+  buildNav();
+  document.getElementById('top-date').textContent = fmtDateCN();
+
+  try {
+    const p = await api.profile();
+    for (const l of p.lenses) ctx.lensNames[l.id] = l.name;
+  } catch { /* 首屏容错 */ }
+
+  const start = (location.hash.match(/^#\/(\w+)/) || [])[1];
+  navigate(VIEWS.some((v) => v.id === start) ? start : 'today', { push: false });
+  window.addEventListener('hashchange', () => {
+    const id = (location.hash.match(/^#\/(\w+)/) || [])[1];
+    if (id && id !== current) navigate(id, { push: false });
+  });
+
+  loadSidebarFoot();
+  setInterval(loadSidebarFoot, 120000);
+}
+
+boot();

@@ -1,72 +1,54 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI for Science 大陆情报系统</title>
-<link rel="stylesheet" href="/static/css/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>见微 · AI for Science 情报</title>
+  <meta name="description" content="见微知著 —— 你的私人 AI4S 大陆情报分析师">
+  <meta name="theme-color" content="#0a0c10">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="见微">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/seal.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icons/seal-180.png">
+  <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
-<div class="app-wrap">
-  <header>
-    <div>
-      <h1>AI for Science 大陆情报系统</h1>
-      <div class="sub">Phase 1 — 北京 · 亦庄 BioPark 深度监测</div>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand">
+        <span class="brand-seal">微</span>
+        <div>
+          <div class="brand-name">见微</div>
+          <div class="muted" style="font-size:10.5px;letter-spacing:.08em">AI4S 大陆情报</div>
+        </div>
+      </div>
+      <nav id="side-nav"></nav>
+      <div class="side-foot" id="side-foot"></div>
+    </aside>
+
+    <div id="main">
+      <header id="topbar">
+        <div class="brand"><span class="brand-seal">微</span><span class="brand-name">见微</span></div>
+        <span class="top-title" id="top-title"></span>
+        <span class="spacer"></span>
+        <span class="top-date" id="top-date"></span>
+        <span class="health-dot" id="health-dot" onclick="location.hash='#/me'"></span>
+      </header>
+      <main id="view"></main>
     </div>
-  </header>
-
-  <nav class="tabs">
-    <button class="tab-btn active" data-view="timeline">📰 时间线</button>
-    <button class="tab-btn" data-view="lineages">🔗 政策生命周期</button>
-    <button class="tab-btn" data-view="sources">🗺️ 信息源地图</button>
-  </nav>
-
-  <div class="stats-bar" id="stats-bar"></div>
-
-  <div class="toolbar" id="toolbar-timeline">
-    <input type="text" id="search-input" placeholder="搜索标题、内容、发文机构...">
-    <select id="filter-category">
-      <option value="">全部分类</option>
-      <option value="政策发布">政策发布</option>
-      <option value="实施细则">实施细则</option>
-      <option value="资金申报">资金申报</option>
-      <option value="人才政策">人才政策</option>
-      <option value="监管动态">监管动态</option>
-      <option value="企业动态">企业动态</option>
-      <option value="学术会议">学术会议</option>
-      <option value="产业数据">产业数据</option>
-    </select>
-    <select id="filter-region">
-      <option value="">全部地域</option>
-      <option value="亦庄BDA">亦庄 BDA</option>
-      <option value="市级">市级</option>
-      <option value="京津冀">京津冀</option>
-      <option value="全国">全国</option>
-    </select>
-    <select id="filter-score">
-      <option value="">全部评分</option>
-      <option value="4">≥4 高相关</option>
-      <option value="3">≥3</option>
-      <option value="2">≥2</option>
-    </select>
   </div>
 
-  <!-- Timeline View -->
-  <div class="view" id="view-timeline">
-    <div id="timeline-container"></div>
-  </div>
+  <nav id="tabbar"></nav>
 
-  <!-- Lineages View -->
-  <div class="view" id="view-lineages" style="display:none">
-    <div id="lineages-container"></div>
+  <div id="overlay"></div>
+  <div id="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-body"></div>
   </div>
+  <div id="toast"></div>
 
-  <!-- Sources View -->
-  <div class="view" id="view-sources" style="display:none">
-    <div id="sources-container"></div>
-  </div>
-</div>
-
-<script src="/static/js/app.js"></script>
+  <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>
