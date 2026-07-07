@@ -74,7 +74,10 @@ def chat_json(messages: list[dict], model: str | None = None, purpose: str = "an
         "max_tokens": max_tokens,
     }
     data = _post_chat(body, purpose)
-    content = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+    choice = (data.get("choices") or [{}])[0]
+    if choice.get("finish_reason") == "length":
+        raise LlmBadOutput(f"输出在 {max_tokens} tokens 处被截断，请调大 max_tokens")
+    content = choice.get("message", {}).get("content") or ""
     try:
         return json.loads(content)
     except json.JSONDecodeError as e:

@@ -13,10 +13,10 @@ from app.ingest.parsers import pick_parser
 from app.log import log_event, now_iso
 from app.models import FetchLog, Item, Profile, Source
 from app.textutil import (beijing_today, canonical_url, extract_main_text,
-                          hamming, simhash64, uid_for)
+                          jaccard, simhash64, title_tokens, uid_for)
 
 DEDUP_WINDOW_DAYS = 14
-SIMHASH_MAX_DISTANCE = 6
+DUP_JACCARD = 0.7   # 实义词重合率 ≥ 此值视为同一事件（实测同事件≥0.85、模板相似不同事件≤0.35）
 DETAIL_FETCH_PAUSE_S = 0.4
 
 
@@ -25,10 +25,10 @@ def _gate_pass(title: str, excerpt: str, keywords: list[str]) -> bool:
     return any(k.lower() in text for k in keywords)
 
 
-def _recent_simhashes(db) -> list[tuple[int, int]]:
+def _recent_titles(db) -> list[tuple[int, frozenset]]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=DEDUP_WINDOW_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    rows = db.query(Item.id, Item.simhash).filter(Item.fetched_at >= cutoff).all()
-    return [(int(i), int(s or 0)) for i, s in rows]
+    rows = db.query(Item.id, Item.title).filter(Item.fetched_at >= cutoff).all()
+    return [(int(i), title_tokens(t or "")) for i, t in rows]
 
 
 def run_source(source_id: str) -> dict:
@@ -72,7 +72,7 @@ def run_source(source_id: str) -> dict:
                 return result
 
             keywords = (db.get(Profile, 1).keywords or []) if cfg.get("gate") else []
-            recent = _recent_simhashes(db)
+            recent = _recent_titles(db)
             found, new, gated = len(raws), 0, 0
 
             for raw in raws[: settings.fetch_max_per_source]:
@@ -82,8 +82,8 @@ def run_source(source_id: str) -> dict:
                 if cfg.get("gate") and not _gate_pass(raw.title, raw.excerpt, keywords):
                     gated += 1
                     continue
-                sh = simhash64(raw.title)
-                cluster = next((rid for rid, rh in recent if rh and hamming(sh, rh) <= SIMHASH_MAX_DISTANCE), None)
+                toks = title_tokens(raw.title)
+                cluster = next((rid for rid, rt in recent if jaccard(toks, rt) >= DUP_JACCARD), None)
                 content = raw.excerpt
                 if cfg.get("fetch_detail") and cluster is None:
                     detail = fetch(raw.url, verify=cfg.get("verify", True), retries=1)
@@ -94,12 +94,12 @@ def run_source(source_id: str) -> dict:
                     uid=uid, source_id=source_id, url=canonical_url(raw.url), title=raw.title,
                     published_at=raw.published or beijing_today(), fetched_at=now_iso(),
                     excerpt=raw.excerpt, content=content or raw.excerpt,
-                    status="new", simhash=str(sh), cluster_of=cluster,
+                    status="new", simhash=str(simhash64(raw.title)), cluster_of=cluster,
                 )
                 db.add(item)
                 db.flush()
                 fts_upsert(db, item.id, item.title, "", item.content)
-                recent.append((item.id, sh))
+                recent.append((item.id, toks))
                 new += 1
 
             src.consecutive_failures, src.health, src.last_success_at = 0, "ok", now_iso()

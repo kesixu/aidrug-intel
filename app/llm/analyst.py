@@ -3,6 +3,8 @@
 评分模型：final = 0.55·个性化(维度加权) + 0.25·行业重要性 + 0.20·来源权威度
 分级：≥75 🔴必读  ≥60 🟠关注  ≥45 🔵扫一眼  <45 ⚪归档
 """
+import re
+
 from app.config import settings
 from app.db import fts_upsert, session_scope
 from app.llm.client import LlmBadOutput, LlmError, chat_json
@@ -120,7 +122,7 @@ def _normalize(raw: dict, lenses: list[Lens]) -> dict:
     out["lens_scores"] = scores
     out["signal"] = raw.get("signal") if raw.get("signal") in ("强", "中", "弱") else "中"
     dl = raw.get("deadline")
-    out["deadline"] = dl if isinstance(dl, str) and len(dl) == 10 else None
+    out["deadline"] = dl if isinstance(dl, str) and re.fullmatch(r"20\d{2}-\d{2}-\d{2}", dl) else None
     for k in ("event_type", "action_hint", "policy_family", "policy_stage"):
         out[k] = str(raw.get(k) or "")[:200]
     return out

@@ -61,7 +61,8 @@ def parse_html_list(content: bytes, base_url: str, cfg: dict) -> list[RawItem]:
             continue
         container = a.find_parent(["li", "tr", "dd"]) or a.parent
         ctx = clean_text(container.get_text(" ", strip=True)) if container else title
-        published = parse_date_like(ctx.replace(title, " ")) or parse_date_like(url)
+        published = (parse_date_like(ctx.replace(title, " "))
+                     or parse_date_like(title) or parse_date_like(url))
         if require_date and not published:
             continue
         if url in seen:

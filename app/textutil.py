@@ -69,6 +69,31 @@ def hamming(a: int, b: int) -> int:
     return bin(a ^ b).count("1")
 
 
+_TITLE_STOP = {
+    "的", "了", "与", "及", "和", "对", "在", "为", "各", "有关", "关于", "根据",
+    "通知", "公告", "公示", "通告", "批复", "意见", "办法", "印发", "转发", "发布",
+    "开展", "组织", "做好", "启动", "举办", "召开", "工作",
+}
+_WORDCHAR_RE = re.compile(r"[\w一-鿿]")
+
+
+def title_tokens(text: str) -> frozenset:
+    """标题实义词集合（剔除公文模板词与标点），供 Jaccard 软去重。
+    公文标题大量共享「关于/开展/通知」等模板词，不剔除会把不同事件误判为重复。"""
+    out = set()
+    for t in jieba.cut(clean_text(text)):
+        t = t.strip().lower()
+        if t and t not in _TITLE_STOP and _WORDCHAR_RE.search(t):
+            out.add(t)
+    return frozenset(out)
+
+
+def jaccard(a: frozenset, b: frozenset) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
 def extract_main_text(html: str | bytes, max_chars: int = 8000) -> str:
     """通用正文抽取：剔除脚本/导航后取密度最高的文本块，够用且无重依赖。"""
     soup = BeautifulSoup(html or "", "lxml")
@@ -86,10 +111,14 @@ def extract_main_text(html: str | bytes, max_chars: int = 8000) -> str:
 
 
 def parse_date_like(s: str) -> str:
-    """从字符串中提取 YYYY-MM-DD；失败返回空串。"""
+    """从字符串中提取 YYYY-MM-DD；支持分隔符与紧凑形式（如 gov 站 URL 的 t20260703_）。"""
     if not s:
         return ""
     m = re.search(r"(20\d{2})[-/年.](\d{1,2})[-/月.](\d{1,2})", s)
+    if not m:
+        m = re.search(r"(20\d{2})(\d{2})(\d{2})", s)
     if m:
-        return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}"
+        y, mo, d = m.group(1), int(m.group(2)), int(m.group(3))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return f"{y}-{mo:02d}-{d:02d}"
     return ""

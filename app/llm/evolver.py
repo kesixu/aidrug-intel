@@ -76,7 +76,7 @@ def run_evolution() -> dict:
     try:
         raw = chat_json([{"role": "system", "content": system}, {"role": "user", "content": user}],
                         model=settings.deepseek_model_pro, purpose="evolve",
-                        temperature=0.3, max_tokens=1800)
+                        temperature=0.3, max_tokens=4000)
     except (LlmError, LlmBadOutput) as e:
         with session_scope() as db:
             db.add(EvolutionRun(report_md=f"进化任务失败：{e}", status="failed"))
