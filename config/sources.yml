@@ -1,0 +1,128 @@
+# 情报源注册表 —— 定义的唯一权威来源，启动时同步进 DB（运行状态保留在 DB）。
+# 加源 = 加一段 YAML；特殊结构源 = parsers.py 里加一个解析函数并在 config.parser 指定。
+# 可达性均为 2026-07-07 自 kumo VPS 实测。
+#
+# config 字段说明：
+#   item_selector  CSS 选择器（缺省用通用启发式：li/tr 内带日期的标题链接）
+#   href_pattern   链接正则过滤
+#   fetch_detail   是否抓正文详情页（政府源建议 true；RSS 用摘要即可）
+#   gate           是否启用画像关键词门控（高流量媒体源必开，政府源低量全分析）
+#   max_items      单轮解析上限
+#   verify         TLS 校验（个别政府站证书链不全时置 false）
+
+sources:
+  # ── Tier 1 · 亦庄/北京核心（用户地理与决策焦点）──
+  - id: kfqgw_zwgk
+    name: 亦庄管委会·政务公开
+    tier: 1
+    kind: html
+    url: https://kfqgw.beijing.gov.cn/zwgkkfq/
+    schedule_minutes: 120
+    config: { fetch_detail: true, href_pattern: 't\d{8}_\d+\.html' }
+
+  - id: ncsti_jkq
+    name: 科创中心·经开区动态
+    tier: 1
+    kind: html
+    url: https://www.ncsti.gov.cn/kjdt/scyq/bjjjjskfq/jkdt/
+    schedule_minutes: 120
+    config: { fetch_detail: true, href_pattern: 't\d{8}_\d+\.html' }
+
+  - id: bjkw_zcwj
+    name: 北京市科委·政策文件
+    tier: 1
+    kind: html
+    url: https://kw.beijing.gov.cn/zwgk/zcwj/
+    schedule_minutes: 120
+    config: { item_selector: 'ul.list li a', fetch_detail: true }
+
+  - id: bjkw_zcjd
+    name: 北京市科委·政策解读
+    tier: 1
+    kind: html
+    url: https://kw.beijing.gov.cn/zwgk/zcjd/
+    schedule_minutes: 240
+    config: { item_selector: 'ul.list li a', fetch_detail: true }
+
+  - id: beijing_zc
+    name: 北京市政府·政策法规
+    tier: 1
+    kind: html
+    url: https://www.beijing.gov.cn/zhengce/zhengcefagui/
+    schedule_minutes: 240
+    config: { href_pattern: 't\d{8}_\d+\.html', fetch_detail: true, max_items: 20 }
+
+  # ── Tier 2 · 国家级 ──
+  - id: govcn_library
+    name: 国务院·政策文件库
+    tier: 2
+    kind: html
+    url: "https://sousuo.www.gov.cn/search-gov/data?t=zhengcelibrary_gw&q=&timetype=timeqb&sort=pubtime&sortType=1&searchfield=title&p=1&n=20"
+    schedule_minutes: 240
+    config: { parser: govcn, fetch_detail: true }
+
+  - id: most_tztg
+    name: 科技部·通知公告
+    tier: 2
+    kind: html
+    url: https://www.most.gov.cn/tztg/
+    schedule_minutes: 240
+    config: { item_selector: 'ul.info_list2 li a', fetch_detail: true }
+
+  # ── Tier 3 · 行业媒体（关键词门控后进分析）──
+  - id: kr36
+    name: 36氪
+    tier: 3
+    kind: rss
+    url: https://36kr.com/feed
+    schedule_minutes: 120
+    config: { gate: true, fetch_detail: true }
+
+  - id: qbitai
+    name: 量子位
+    tier: 3
+    kind: rss
+    url: https://www.qbitai.com/feed
+    schedule_minutes: 120
+    config: { gate: true, fetch_detail: true }
+
+  # ── 暂禁用（通道问题留档，健康面板可见）──
+  - id: nmpa
+    name: 国家药监局
+    tier: 2
+    kind: html
+    url: https://www.nmpa.gov.cn/yaowen/ypjgyw/index.html
+    enabled: false
+    note: "412 反爬（需 JS challenge），待接入替代通道"
+
+  - id: miit
+    name: 工信部·政策文件
+    tier: 2
+    kind: html
+    url: https://www.miit.gov.cn/zwgk/zcwj/index.html
+    enabled: false
+    note: "页面纯 JS 渲染，需逆向其 JSON 接口后启用"
+
+  - id: vcbeat
+    name: 动脉网
+    tier: 3
+    kind: html
+    url: https://vcbeat.net
+    enabled: false
+    note: "自 kumo VPS 不可达（连接超时），待换通道"
+
+  - id: nhc
+    name: 国家卫健委
+    tier: 2
+    kind: html
+    url: https://www.nhc.gov.cn/wjw/zcjd/list.shtml
+    enabled: false
+    note: "自 kumo VPS 不可达，待换通道"
+
+  - id: cde
+    name: 药审中心 CDE
+    tier: 2
+    kind: html
+    url: https://www.cde.org.cn/main/news/listpage/1acf5b78bcc46b4a48b2308100ce6c27
+    enabled: false
+    note: "WAF 返回 202 挑战页，待逆向其列表 POST 接口"
