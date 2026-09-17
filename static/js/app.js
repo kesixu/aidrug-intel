@@ -6,12 +6,14 @@ import * as today from './views/today.js';
 import * as feed from './views/feed.js';
 import * as chat from './views/chat.js';
 import * as insight from './views/insight.js';
+import * as atlas from './views/atlas.js';
 import * as me from './views/me.js';
 
 const ICONS = {
   today: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
   feed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>',
   insight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  atlas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="12" cy="19" r="2.2"/><path d="M6.8 7.2 10.8 17M17.3 6.2 13.3 17.3M7 6.4 17 5.4"/></svg>',
   me: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>',
 };
 
@@ -20,6 +22,7 @@ const VIEWS = [
   { id: 'feed', label: '情报', mod: feed },
   { id: 'chat', label: '问', mod: chat, ask: true },
   { id: 'insight', label: '洞察', mod: insight },
+  { id: 'atlas', label: '图谱', mod: atlas },
   { id: 'me', label: '我的', mod: me },
 ];
 

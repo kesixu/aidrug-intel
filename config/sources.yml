@@ -70,6 +70,37 @@ sources:
     config: { item_selector: 'ul.info_list2 li a', fetch_detail: true }
 
   # ── Tier 3 · 行业媒体（关键词门控后进分析）──
+  # v3 新增（2026-09-17）：中国合作生态的关键情报面。
+  # 从 kumo VPS 实测可达（bydrug 200 / vbdata 200 / iivd 200）。
+  # ⚠ 以下三源为 v3（2026-09-17）为「中国合作生态」维度预留。
+  # 从 kumo VPS 实测**域名可达**（HTTP 200），但列表页为 JS 渲染（Vue/React SPA），
+  # 服务端返回的 HTML 里没有条目，通用启发式解析器取到 0 条。
+  # 处理：先留档为 disabled（沿用本文件对 nmpa/cde 的既有约定），
+  # 待接入其 JSON 接口或改用渲染通道后再 enabled。
+  - id: bydrug
+    name: 医药魔方 ByDrug
+    tier: 2
+    kind: html
+    url: https://bydrug.pharmcube.com/news
+    enabled: false
+    note: "列表页 JS 渲染，需逆向其 JSON 接口；文章详情页可直取"
+
+  - id: vbdata
+    name: 动脉网
+    tier: 3
+    kind: html
+    url: https://www.vbdata.cn/
+    enabled: false
+    note: "Vue SPA，服务端 HTML 无条目列表"
+
+  - id: iivd
+    name: 小桔灯网（IVD/病理）
+    tier: 3
+    kind: html
+    url: https://www.iivd.net/
+    enabled: false
+    note: "Discuz 论坛结构 + JS 列表，待加专用解析函数"
+
   - id: kr36
     name: 36氪
     tier: 3

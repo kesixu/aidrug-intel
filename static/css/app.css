@@ -513,3 +513,79 @@ textarea.narrative:focus { border-color: var(--jade); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ═══ 图谱视图（行业认知地图） ═══ */
+.at-hero { padding: 8px 2px 4px; }
+.at-hero-kicker { font-family: var(--font-mono); font-size: 12px; color: var(--seal); letter-spacing: .12em; margin-bottom: 8px; }
+.at-hero-title { font-family: var(--font-display); font-size: 24px; font-weight: 700; letter-spacing: .02em; line-height: 1.3; }
+.at-hero-sub { color: var(--text-2); font-size: 14px; margin-top: 8px; max-width: 620px; }
+
+/* 三分类卡片 */
+.at-cat-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.at-cat {
+  position: relative; padding: 16px 16px 14px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  border-top: 2px solid var(--line-strong); overflow: hidden;
+}
+.at-cat.accent-seal    { border-top-color: var(--seal); }
+.at-cat.accent-amber   { border-top-color: var(--amber); }
+.at-cat.accent-azure   { border-top-color: var(--azure); }
+.at-cat-no {
+  font-family: var(--font-display); font-size: 22px; font-weight: 700;
+  color: var(--text-3); line-height: 1; margin-bottom: 6px;
+}
+.at-cat.accent-seal .at-cat-no  { color: var(--seal); }
+.at-cat.accent-amber .at-cat-no { color: var(--amber); }
+.at-cat.accent-azure .at-cat-no { color: var(--azure); }
+.at-cat-name { font-family: var(--font-display); font-size: 16px; font-weight: 700; display: inline; margin-right: 8px; }
+.at-tag {
+  display: inline-flex; align-items: center; padding: 1px 9px; border-radius: 999px;
+  font-size: 11px; background: var(--surface-3); color: var(--text-2); white-space: nowrap;
+}
+.at-cat-def { color: var(--text-2); font-size: 13.5px; margin: 10px 0 8px; line-height: 1.6; }
+.at-cat-rep { font-size: 13px; color: var(--text); font-weight: 600; }
+.at-cat-model { font-size: 12.5px; color: var(--text-3); margin-top: 6px; font-family: var(--font-mono); }
+.at-hint { color: var(--text-3); font-size: 12.5px; margin: 12px 2px 0; }
+
+/* 公司卡片 */
+.at-company-list { display: flex; flex-direction: column; gap: 14px; }
+.at-company {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 18px; border-left: 3px solid var(--line-strong);
+}
+.at-company.accent-seal    { border-left-color: var(--seal); }
+.at-company.accent-amber   { border-left-color: var(--amber); }
+.at-company.accent-azure   { border-left-color: var(--azure); }
+.at-company-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.at-company-name { font-family: var(--font-display); font-size: 19px; font-weight: 700; }
+.at-company-en { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
+.at-company-stats { display: grid; grid-template-columns: 1fr; gap: 6px; margin-bottom: 14px; }
+.at-stat { display: flex; gap: 8px; font-size: 13px; align-items: baseline; }
+.at-stat-k { flex: none; width: 44px; color: var(--text-3); font-size: 12px; }
+.at-stat-v { color: var(--text); }
+.at-section-sub { font-size: 12px; color: var(--text-3); letter-spacing: .08em; margin: 4px 0 8px; }
+.at-line { padding: 8px 0; border-top: 1px dashed var(--line); }
+.at-line-n { font-family: var(--font-mono); font-size: 13px; color: var(--jade); font-weight: 600; margin-bottom: 2px; }
+.at-line-d { font-size: 13.5px; color: var(--text-2); line-height: 1.55; }
+.at-note {
+  margin-top: 12px; padding: 10px 12px; font-size: 12.5px; line-height: 1.6;
+  background: var(--surface-2); border-radius: var(--radius-sm); color: var(--text-2);
+  border: 1px solid var(--line);
+}
+
+/* 生物大模型讲解 */
+.at-bio { display: flex; flex-direction: column; gap: 4px; }
+.at-bio-sec { padding: 16px 2px; border-bottom: 1px solid var(--line); }
+.at-bio-sec:last-child { border-bottom: none; }
+.at-bio-q { font-family: var(--font-display); font-size: 16px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
+.at-bio-p { font-size: 14px; color: var(--text-2); line-height: 1.7; margin-bottom: 8px; }
+.at-bio-p:last-child { margin-bottom: 0; }
+
+.at-foot { margin: 24px 2px 8px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--text-3); font-size: 12px; }
+
+/* 桌面断点：三分类并排 + 公司统计两栏 */
+@media (min-width: 768px) {
+  .at-cat-grid { grid-template-columns: repeat(3, 1fr); }
+  .at-company-stats { grid-template-columns: 1fr 1fr; }
+  .at-hero-title { font-size: 28px; }
+}

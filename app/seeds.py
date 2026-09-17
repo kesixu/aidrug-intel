@@ -8,19 +8,47 @@ from app.models import Analysis, Entity, Item, Lens, Profile, Source
 from app.textutil import simhash64, uid_for
 
 LENS_SEEDS = [
-    ("az_career", "AZ北京·亦庄机会", 0.30,
-     "AstraZeneca（阿斯利康）中国动向、北京亦庄/经开区生物医药园区政策与配套、外企在华研发投入与岗位信号。"),
-    ("trustpathbot", "TrustPathBot 市场", 0.25,
-     "AI 可信/合规/监管科技的需求信号、医药行业数字化合规要求、AI 治理与算法备案政策落地、可解释性与审计要求。"),
-    ("talent_funding", "人才与资金", 0.20,
-     "人才计划（海聚工程、雏鹰计划等）、科研基金/课题申报窗口、园区补贴与租金减免，尤其是有明确截止日期的申报机会。"),
-    ("settle_decision", "定居决策", 0.15,
-     "宏观政策环境与外企营商环境变化、生物医药/AI 行业景气度、北京落户与国际人才生活配套（住房/教育/医疗）政策。"),
-    ("industry", "AI4S 行业大盘", 0.10,
-     "AI for Science 与 AI 制药行业动态：大模型进展、算力政策、融资并购、头部公司（晶泰科技、英矽智能、深势科技、百图生科等）。"),
+    # v3 重构（2026-09-17）：Oliver 已入职阿斯利康 CPSS→PDS 北京分支，
+    # 决策焦点从「拿到机会」转为「在岗做出差异 + 中国合作落地」。
+    # 注意：az_career 的 **id 保持不变**（legacy 映射与前端印章语义依赖它），只改名称/权重/描述。
+    ("az_career", "AZ CPSS·北京分支", 0.30,
+     "阿斯利康 CPSS（临床药理与安全科学）/PDS 与北京亦庄研发中心动向；非临床毒理病理 AI、"
+     "AI-Pathology、药物安全性评估加速；NAMs（新方法论）/器官芯片/替代动物实验相关监管与企业动态；"
+     "AZ 内部与中国的合作信号（BD、产业基金、高校、医院、联合实验室）。"),
+    ("china_partnership", "中国合作生态", 0.20,
+     "中国 AI 病理公司（医策科技、迪英加、商汤善萃等）、类器官与器官芯片企业（大橡科技、耀速科技、"
+     "伯桢生物等）、毒理病理 CRO（益诺思、昭衍等）；以及准备 license-out 的创新药企及其对"
+     "「早期资产安全性数据包」的需求；人类遗传资源与数据出境合规政策变化。"),
+    ("industry", "AI4S 行业大盘", 0.15,
+     "AI for Science 与 AI 制药行业动态：大模型进展、算力政策、融资并购、头部公司"
+     "（晶泰科技、英矽智能、深势科技、百图生科等）。"),
+    ("trustpathbot", "TrustPathBot 市场", 0.15,
+     "AI 可信/合规/监管科技的需求信号、医药行业数字化合规要求、AI 治理与算法备案政策落地、"
+     "可解释性与审计要求。"),
+    ("talent_funding", "人才与资金", 0.10,
+     "人才计划（海聚工程、雏鹰计划等）、科研基金/课题申报窗口、园区补贴与租金减免，"
+     "尤其是有明确截止日期的申报机会。"),
+    ("settle_decision", "定居决策", 0.10,
+     "宏观政策环境与外企营商环境变化、生物医药/AI 行业景气度、"
+     "北京落户与国际人才生活配套（住房/教育/医疗）政策。"),
 ]
 
 PROFILE_NARRATIVE = (
+    "我是 Oliver，计算病理方向的 AI/ML 从业者，已入职阿斯利康北京亦庄全球研发中心，"
+    "在 CPSS（临床药理与安全科学）下的 Predictive Data Science 分支做 AI-Pathology，"
+    "北京小组共 4 人，向剑桥的经理汇报。\n"
+    "我当前的核心任务有三条：\n"
+    "① 用「临床前病理数据 + 多模态 AI」支持多条药物管线，并把药物安全性评估这个拖慢研发的环节加速；\n"
+    "② 对接中国本地高校与创业公司，找到值得做、能向上汇报的合作项目（团队不熟悉中国的合作方式，需要我来 build connection）；\n"
+    "③ 在团队定位尚未完全定死的窗口期，先定义问题、建立自己的不可替代位置。\n"
+    "我同时仍在观察另外两条线：自研产品 TrustPathBot（AI 可信/合规方向）在大陆市场的定位与时机；"
+    "以及英国 vs 中国大陆的长期定居选择。\n"
+    "偏好：政策原文优先于媒体转述；重视有明确申报窗口/截止日期的机会；"
+    "对亦庄、北京市级信号，以及 AI 病理/器官芯片/药物安全性监管信号敏感度最高；"
+    "关注阿斯利康自身的合作动向（BD、基金、高校、联合实验室）——那是我做中国合作的入口。"
+)
+
+_PROFILE_NARRATIVE_V2 = (
     "我是 Oliver，AI/ML 方向从业者，长期关注 AI for Science 与 AI 制药。当前正在评估三个现实决策：\n"
     "① AstraZeneca 北京（亦庄）的职业机会——关注 AZ 中国研发布局、亦庄/经开区生物医药生态；\n"
     "② 自研产品 TrustPathBot（AI 可信/合规方向）在大陆市场的定位与时机；\n"
@@ -33,6 +61,10 @@ PROFILE_KEYWORDS = [
     "亦庄", "经开区", "BioPark", "阿斯利康", "AstraZeneca", "药物研发",
     "人才计划", "海聚", "申报", "算力", "合规", "监管", "算法备案",
     "晶泰", "英矽", "深势", "百图生科", "融资", "临床试验", "药监",
+    # v3 新增（2026-09-17）
+    "CPSS", "临床药理", "安全性评价", "毒理病理", "病理", "计算病理", "多模态",
+    "数字病理", "器官芯片", "类器官", "微生理系统", "NAMs", "替代动物实验",
+    "license out", "对外授权", "人类遗传资源", "数据出境",
 ]
 
 ENTITY_SEEDS = [  # (name, kind, aliases)
@@ -45,7 +77,22 @@ ENTITY_SEEDS = [  # (name, kind, aliases)
     ("北京市科委", "agency", ["北京市科学技术委员会", "市科委", "中关村管委会"]),
     ("国家药监局", "agency", ["NMPA", "药监局"]),
     ("科技部", "agency", ["MOST", "科学技术部"]),
+    # v3 新增（2026-09-17）：中国合作生态的目标对象
+    ("医策科技", "company", ["杭州医策", "灵眸"]),
+    ("迪英加科技", "company", ["迪英加", "DeepPathAI", "DiPath"]),
+    ("商汤善萃医疗", "company", ["商汤善萃"]),
+    ("大橡科技", "company", ["大橡"]),
+    ("耀速科技", "company", ["Xellar Biosystems", "Xellar", "3D-Wet-AI"]),
+    ("伯桢生物", "company", ["伯桢"]),
+    ("和铂医药", "company", ["Harbour BioMed", "Harbour Mice"]),
+    ("石药集团", "company", ["石药", "CSPC"]),
+    ("上海瑞金医院", "hospital", ["瑞金医院", "RuiPath"]),
+    ("清华大学", "university", ["清华", "Tsinghua"]),
+    ("北京大学", "university", ["北大", "PKU", "北京大学肿瘤医院"]),
+    ("复旦大学", "university", ["复旦", "Fudan"]),
+    ("四川大学华西医院", "hospital", ["华西医院", "华西"]),
 ]
+
 
 _LEGACY_LENS_MAP = {  # v0.1 五维(0-5) → v2 lens(0-100)
     "az_beijing": "az_career",
@@ -66,14 +113,46 @@ def _tier_for(score: float) -> str:
 
 
 def seed_lenses_profile(db: Session) -> None:
+    """幂等种子。
+
+    v3（2026-09-17）起，已存在的 lens 会被**按 seeds 重新校准**（名称/权重/描述/顺序），
+    因为 LENS_SEEDS 是 Oliver 自己的决策维度配置，不是 AI 自动生成的画像。
+    但 **profile 的编辑权仍归 Oliver**：关键词只做增补（不删），
+    narrative 仅当它仍等于上一次的种子原文时才替换（即 Oliver 没手改过）。
+    """
+    refreshed = []
     for pos, (lid, name, weight, desc) in enumerate(LENS_SEEDS):
-        if db.get(Lens, lid) is None:
-            db.add(Lens(id=lid, name=name, weight=weight, description=desc, enabled=True, position=pos))
-    if db.get(Profile, 1) is None:
-        db.add(Profile(id=1, narrative=PROFILE_NARRATIVE, keywords=PROFILE_KEYWORDS, updated_at=now_iso()))
+        lens = db.get(Lens, lid)
+        if lens is None:
+            db.add(Lens(id=lid, name=name, weight=weight, description=desc,
+                        enabled=True, position=pos))
+            continue
+        if (lens.name, round(lens.weight, 2), lens.description, lens.position) != \
+                (name, round(weight, 2), desc, pos):
+            lens.name, lens.weight, lens.description, lens.position = name, weight, desc, pos
+            refreshed.append(lid)
+
+    profile = db.get(Profile, 1)
+    if profile is None:
+        db.add(Profile(id=1, narrative=PROFILE_NARRATIVE, keywords=PROFILE_KEYWORDS,
+                       updated_at=now_iso()))
+    else:
+        merged = list(dict.fromkeys(list(profile.keywords or []) + PROFILE_KEYWORDS))
+        if merged != (profile.keywords or []):
+            profile.keywords = merged
+            refreshed.append("profile.keywords")
+        if (profile.narrative or "").strip() == _PROFILE_NARRATIVE_V2.strip():
+            profile.narrative = PROFILE_NARRATIVE
+            profile.updated_at = now_iso()
+            refreshed.append("profile.narrative")
+
     for name, kind, aliases in ENTITY_SEEDS:
         if db.query(Entity.id).filter(Entity.name == name).first() is None:
             db.add(Entity(name=name, kind=kind, aliases=aliases, watch=True))
+
+    if refreshed:
+        log_event("seeds.lens_refresh", changed=refreshed)
+
 
 
 def import_legacy(db: Session) -> int:
