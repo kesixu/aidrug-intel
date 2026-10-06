@@ -46,7 +46,7 @@ def run_source(source_id: str) -> dict:
 
             if res.not_modified:
                 src.consecutive_failures, src.health, src.last_success_at = 0, "ok", now_iso()
-                db.add(FetchLog(source_id=source_id, ok=True, http_status=304, ms=res.ms))
+                db.add(FetchLog(source_id=source_id, ok=True, http_status=304, ms=res.ms, new=0))
                 result.update(ok=True)
                 return result
 
@@ -114,14 +114,39 @@ def run_source(source_id: str) -> dict:
         return result
 
 
+def _parse_utc_iso(ts: str) -> datetime | None:
+    """解析 now_iso() 写出的 UTC ISO 串；兼容有无尾随 Z 与毫秒。"""
+    if not ts:
+        return None
+    raw = ts.strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ",
+                "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"):
+        try:
+            return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
 def _is_due(last_fetch_at: str, schedule_minutes: int) -> bool:
+    """分钟粒度到期判定（P0 缺陷修复）。
+
+    原实现被写成日粒度：把 last_fetch_at 切到日期级别比较，导致
+    schedule_minutes=120 的源在同一 UTC 日内只被抓一次，
+    与 AGENTS.md 声明的"每源独立频率"不符。现场证据：源记录里
+    last_fetch_at 精确到秒（如 2026-10-06T04:16:56Z），而判定只看日期。
+    现按分钟差判定；无法解析时保守判到期，宁可多抓一次也不要静默停摆。
+    """
     if not last_fetch_at:
         return True
-    try:
-        last = datetime.strptime(last_fetch_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    except ValueError:
+    last = _parse_utc_iso(last_fetch_at)
+    if last is None:
         return True
-    return datetime.now(timezone.utc) - last >= timedelta(minutes=schedule_minutes)
+    return (datetime.now(timezone.utc) - last) >= timedelta(minutes=max(0, int(schedule_minutes)))
 
 
 def run_all(only_due: bool = True) -> list[dict]:

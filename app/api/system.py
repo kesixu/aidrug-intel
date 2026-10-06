@@ -11,6 +11,7 @@ from app.llm.evolver import apply_suggestion, run_evolution
 from app.log import log_event, now_iso
 from app.models import (Analysis, EvolutionRun, FetchLog, Item, LlmUsage,
                         Source, Suggestion)
+from app.textutil import beijing_day_start_utc_iso, beijing_month_start_utc_iso
 
 router = APIRouter(tags=["system"])
 
@@ -18,8 +19,10 @@ router = APIRouter(tags=["system"])
 @router.get("/system/status")
 def system_status(db: Session = Depends(get_db)):
     from app.scheduler import job_overview  # 延迟导入避免环
-    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
-    month_utc = datetime.now(timezone.utc).strftime("%Y-%m-01T00:00:00Z")
+    # 修正：原先用 UTC 日界统计"今日"，与全系统声明的 Asia/Shanghai 口径不一致，
+    # 北京时间 08:00 之前的入库会被算进"昨天"。
+    today_utc = beijing_day_start_utc_iso()
+    month_utc = beijing_month_start_utc_iso()
     items_total = db.query(func.count(Item.id)).scalar() or 0
     by_status = dict(db.query(Item.status, func.count()).group_by(Item.status).all())
     by_tier = dict(db.query(Analysis.tier, func.count()).group_by(Analysis.tier).all())

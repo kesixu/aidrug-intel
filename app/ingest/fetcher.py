@@ -38,6 +38,7 @@ def fetch(url: str, etag: str = "", last_modified: str = "",
         headers["If-Modified-Since"] = last_modified
     start = time.monotonic()
     last_err = ""
+    last_status: int | None = None
     for attempt in range(retries + 1):
         try:
             r = httpx.get(url, headers=headers, timeout=settings.fetch_timeout,
@@ -46,6 +47,7 @@ def fetch(url: str, etag: str = "", last_modified: str = "",
             if r.status_code == 304:
                 return FetchResult(status=304, not_modified=True, etag=etag,
                                    last_modified=last_modified, ms=ms)
+            last_status = r.status_code
             if r.status_code >= 500 and attempt < retries:
                 time.sleep(1.5 * (attempt + 1))
                 continue
@@ -58,4 +60,12 @@ def fetch(url: str, etag: str = "", last_modified: str = "",
             last_err = f"{type(e).__name__}: {e}"
             if attempt < retries:
                 time.sleep(1.5 * (attempt + 1))
-    return FetchResult(status=0, error=last_err, ms=int((time.monotonic() - start) * 1000))
+    # 重试耗尽且未拿到任何响应：必须返回结构化失败。
+    # 原缺陷：此处引用的 ms/status 只在 try 内赋值；当最后一轮走的是
+    # 5xx 分支（continue 后循环自然结束）时 ms 从未被赋值，
+    # 触发 UnboundLocalError，把一次普通 503 升级成未捕获异常。
+    return FetchResult(
+        status=last_status if last_status is not None else 0,
+        error=last_err or f"HTTP {last_status}",
+        ms=int((time.monotonic() - start) * 1000),
+    )

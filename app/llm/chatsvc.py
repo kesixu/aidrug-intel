@@ -82,6 +82,22 @@ def ensure_session(db: Session, session_id: str | None, first_message: str) -> C
     return s
 
 
+def _recent_history_asc(rows: list, drop_first: bool, keep: int = HISTORY_MAX) -> list:
+    """把按 id DESC 取回的历史转成时间正序，并剔除刚插入的本轮消息。
+
+    原缺陷：reversed(history[1:]) 先切片再去尾，等于丢掉最旧一条、
+    却保留了刚插入的本轮消息，多轮对话上下文整体错位一格。
+    正确顺序：先 drop_first → 再整体 reverse → 最后从尾部（最近）截取。
+    """
+    ordered = list(rows)
+    if drop_first and ordered:
+        ordered = ordered[1:]
+    ordered.reverse()
+    if keep > 0 and len(ordered) > keep:
+        ordered = ordered[-keep:]
+    return ordered
+
+
 def prepare_turn(session_id: str | None, message: str) -> dict:
     """同步准备：建会话、存用户消息、检索、拼 prompt。返回流式所需的一切。"""
     with session_scope() as db:
@@ -90,7 +106,7 @@ def prepare_turn(session_id: str | None, message: str) -> dict:
         s.updated_at = now_iso()
         history = (db.query(ChatMessage).filter(ChatMessage.session_id == s.id)
                    .order_by(ChatMessage.id.desc()).limit(HISTORY_MAX + 1).all())
-        history = list(reversed(history[1:]))  # 去掉刚插入的这条，按时间正序
+        history = _recent_history_asc(history, drop_first=True, keep=HISTORY_MAX)
         context_block, citations = build_context(db, message)
         messages = [{"role": "system", "content": system_prompt(db, context_block)}]
         for m in history:

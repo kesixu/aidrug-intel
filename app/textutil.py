@@ -1,7 +1,7 @@
 """文本工具：URL 规范化、jieba 分词、simhash 软去重、HTML 正文抽取、北京时间。"""
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from zoneinfo import ZoneInfo
 
@@ -13,6 +13,20 @@ BEIJING = ZoneInfo("Asia/Shanghai")
 
 def beijing_now() -> datetime:
     return datetime.now(BEIJING)
+
+
+def beijing_day_start_utc_iso() -> str:
+    """北京当日 00:00 对应的 UTC ISO 字符串（"今日"统计的正确日界）。"""
+    bj = datetime.now(timezone.utc) + timedelta(hours=8)
+    start_bj = datetime(bj.year, bj.month, bj.day, tzinfo=timezone.utc)
+    return (start_bj - timedelta(hours=8)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def beijing_month_start_utc_iso() -> str:
+    """北京当月 1 日 00:00 对应的 UTC ISO 字符串。"""
+    bj = datetime.now(timezone.utc) + timedelta(hours=8)
+    start_bj = datetime(bj.year, bj.month, 1, tzinfo=timezone.utc)
+    return (start_bj - timedelta(hours=8)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def beijing_today() -> str:

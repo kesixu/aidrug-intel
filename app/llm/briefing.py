@@ -32,6 +32,18 @@ def _fallback_md(date: str, n_new: int) -> str:
             f"（新入库 {n_new} 条，均为低相关）。系统持续监控中。\n")
 
 
+def _low_signal_md(date: str, n_new: int, n_candidates: int) -> str:
+    """有候选条目但全部未达阈值——必须与"完全无新条目"区分开。
+
+    原缺陷：两种情况共用 _fallback_md，导致连续多日 model='none' 的空晨报
+    （现场：2026-10-02 ~ 10-06 连续 5 天）无人察觉。
+    """
+    return (f"# 见微晨报 · {date}\n\n"
+            f"今日新入库 {n_new} 条，其中 {n_candidates} 条进入候选池，"
+            f"但均未达到关注阈值。无值得单独提示的进展。\n\n"
+            f"> 若连续多日如此，请检查采集源是否停摆或门控关键词是否过窄。\n")
+
+
 def generate_brief(force: bool = False) -> dict:
     date = beijing_today()
     with session_scope() as db:
@@ -44,9 +56,19 @@ def generate_brief(force: bool = False) -> dict:
         n_new = db.query(Item).filter(Item.fetched_at >= cutoff).count()
 
         if not rows:
-            content = _fallback_md(date, n_new)
-            model = "none"
-            meta = {"item_ids": [], "deadlines": [], "n_new": n_new}
+            # 区分两种空态：候选池为空 vs 候选池非空但全被阈值挡掉
+            n_cand = (db.query(Item, Analysis).join(Analysis, Analysis.item_id == Item.id)
+                      .filter(Item.fetched_at >= cutoff, Item.cluster_of.is_(None),
+                              Analysis.tier.in_(["red", "orange", "blue"])).count())
+            if n_cand:
+                content = _low_signal_md(date, n_new, n_cand)
+                model = "low-signal"
+            else:
+                content = _fallback_md(date, n_new)
+                model = "none"
+            meta = {"item_ids": [], "deadlines": [], "n_new": n_new, "candidates": n_cand}
+            log_event("brief.low_signal" if n_cand else "brief.empty",
+                      date=date, n_new=n_new, candidates=n_cand)
         else:
             profile = db.get(Profile, 1)
             lens_names = {l.id: l.name for l in db.query(Lens).all()}
@@ -77,7 +99,10 @@ def generate_brief(force: bool = False) -> dict:
                                     temperature=0.4, max_tokens=1600)
                 model = settings.deepseek_model_pro
             except LlmError as e:
-                content = _fallback_md(date, n_new) + f"\n> 晨报生成失败（{e}），以下为高分条目清单：\n\n" + "\n".join(f"- {ln}" for ln in lines[:8])
+                # 兜底清单改为真实条目（标题+链接），不再贴未声明的 [#id] 伪引用
+                content = (_fallback_md(date, n_new)
+                           + f"\n> 晨报生成失败（{e}），以下为高分条目清单：\n\n"
+                           + "\n".join(f"- {it.published_at}《{it.title}》{it.url}" for it, _an in rows[:8]))
                 model = "fallback"
             meta = {"item_ids": [it.id for it, _ in rows],
                     "deadlines": [{"item_id": it.id, "date": an.deadline, "title": it.title}
