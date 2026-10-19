@@ -14,7 +14,7 @@ sources.yml（分层情报源）
    ▼
 采集流水线  抓取(ETag) → 解析(RSS/HTML/JSON) → 关键词门控 → Jaccard去重 → 入库
    ▼
-AI 分析师（deepseek-v4-flash）
+AI 分析师（deepseek-flash）
    携带你的兴趣画像逐条深读 → 摘要/分类/实体/申报截止日
    + 五个决策维度各打 0-100 分并给理由
    → final = 0.55·个性化 + 0.25·行业重要性 + 0.20·来源权威

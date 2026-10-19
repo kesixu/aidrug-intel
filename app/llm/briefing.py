@@ -1,4 +1,5 @@
 """每日晨报：v4-pro 把 24h 高分条目综合成 3 分钟可读完的简报。"""
+import threading
 from datetime import datetime, timedelta, timezone
 
 from app.config import settings
@@ -9,6 +10,8 @@ from app.models import Analysis, Brief, Item, Lens, Profile
 from app.textutil import beijing_today
 
 BRIEF_ITEM_POOL = 25
+# 定时晨报与手动"重新生成"可能撞车：两边都插同一天的 Brief（date 唯一）会让后到的一方报错
+_brief_lock = threading.Lock()
 
 
 def _collect(db) -> tuple[list, list]:
@@ -44,11 +47,23 @@ def _low_signal_md(date: str, n_new: int, n_candidates: int) -> str:
             f"> 若连续多日如此，请检查采集源是否停摆或门控关键词是否过窄。\n")
 
 
+def _failed_md(date: str, err: Exception, rows: list) -> str:
+    """模型没给出可用稿时的兜底：真实条目清单（标题+链接），不贴未声明的 [#id] 伪引用。"""
+    return (f"# 见微晨报 · {date}\n\n> 晨报生成失败（{err}），以下为今日高分条目清单：\n\n"
+            + "\n".join(f"- {it.published_at}《{it.title}》{it.url}" for it, _an in rows[:8]) + "\n")
+
+
 def generate_brief(force: bool = False) -> dict:
+    with _brief_lock:
+        return _generate_brief(force)
+
+
+def _generate_brief(force: bool) -> dict:
     date = beijing_today()
     with session_scope() as db:
         existing = db.query(Brief).filter(Brief.date == date).first()
-        if existing and not force:
+        # 空稿/兜底稿视同没有：2026-10 有 6 天晨报正文为空（思考吃光 max_tokens），旧逻辑见到就跳过
+        if existing and not force and (existing.content_md or "").strip() and existing.model != "fallback":
             return {"date": date, "created": False, "id": existing.id}
 
         rows, deadlines = _collect(db)
@@ -93,17 +108,16 @@ def generate_brief(force: bool = False) -> dict:
 - 全文 ≤600 字。标题用「# 见微晨报 · {date}」。"""
             user = "【素材条目】\n" + "\n".join(lines) + ("\n\n【临期截止】\n" + "\n".join(dl_lines) if dl_lines else "")
             try:
+                # 25 条素材实测 6.1k token（思考 5.5k）、27s；16000 留足余量，截断/空稿由 chat_text 抛错
                 content = chat_text([{"role": "system", "content": system},
                                      {"role": "user", "content": user}],
                                     model=settings.deepseek_model_pro, purpose="brief",
-                                    temperature=0.4, max_tokens=1600)
+                                    temperature=0.4, max_tokens=16000)
                 model = settings.deepseek_model_pro
             except LlmError as e:
-                # 兜底清单改为真实条目（标题+链接），不再贴未声明的 [#id] 伪引用
-                content = (_fallback_md(date, n_new)
-                           + f"\n> 晨报生成失败（{e}），以下为高分条目清单：\n\n"
-                           + "\n".join(f"- {it.published_at}《{it.title}》{it.url}" for it, _an in rows[:8]))
+                content = _failed_md(date, e, rows)
                 model = "fallback"
+                log_event("brief.llm_failed", date=date, error=str(e)[:200])
             meta = {"item_ids": [it.id for it, _ in rows],
                     "deadlines": [{"item_id": it.id, "date": an.deadline, "title": it.title}
                                   for it, an in deadlines],

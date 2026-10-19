@@ -4,6 +4,7 @@
 分级：≥75 🔴必读  ≥60 🟠关注  ≥45 🔵扫一眼  <45 ⚪归档
 """
 import re
+import threading
 
 from app.config import settings
 from app.db import fts_upsert, session_scope
@@ -14,6 +15,10 @@ from app.models import Analysis, Entity, Item, ItemEntity, Lens, Profile, Source
 CATEGORIES = ["政策发布", "实施细则", "资金申报", "人才政策", "监管动态",
               "企业动态", "融资并购", "学术前沿", "产业数据", "其他"]
 _AUTHORITY = {1: 100, 2: 88, 3: 65}
+# 采集 tick、补分析 tick、晨报任务和手动 API 会同时触发补分析；不互斥时两个线程会把同一批条目各分析一遍
+# （llm_usage 里有 71 对重复调用）。uvicorn 单 worker（见 AGENTS.md），进程内锁即可。
+_batch_lock = threading.Lock()
+_MAX_TRANSPORT_FAILS = 3  # 连续几条传输失败就收工，别让一轮在服务端排队时挨个耗满总时限
 
 
 def source_authority(tier: int) -> int:
@@ -84,7 +89,9 @@ def build_messages(item: Item, source: Source | None, profile: Profile,
 def _link_entities(db, item_id: int, raw_entities: list) -> None:
     seen_ids = set()
     for ent in (raw_entities or [])[:8]:
-        name = (ent.get("name") or "").strip()
+        if not isinstance(ent, dict):
+            continue
+        name = str(ent.get("name") or "").strip()
         if not name or len(name) > 60:
             continue
         row = db.query(Entity).filter(Entity.name == name).first()
@@ -102,19 +109,29 @@ def _link_entities(db, item_id: int, raw_entities: list) -> None:
             seen_ids.add(row.id)
 
 
+def _clamp100(v) -> int:
+    try:
+        return max(0, min(100, int(float(v or 0))))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _normalize(raw: dict, lenses: list[Lens]) -> dict:
-    """把模型输出钳制到合法范围，缺失维度补 0 分。"""
+    """把模型输出钳制到合法范围，缺失维度补 0 分。字段类型不对也只降级、不抛异常（否则整批分析中断）。"""
     out = dict(raw)
     out["summary"] = str(raw.get("summary") or "")[:600]
     out["category"] = raw.get("category") if raw.get("category") in CATEGORIES else "其他"
-    out["importance"] = max(0, min(100, int(raw.get("importance") or 0)))
+    out["importance"] = _clamp100(raw.get("importance"))
     known = {l.id for l in lenses}
     scores, got = [], set()
-    for ls in raw.get("lens_scores") or []:
+    raw_scores = raw.get("lens_scores")
+    for ls in raw_scores if isinstance(raw_scores, list) else []:
+        if not isinstance(ls, dict):
+            continue
         lid = ls.get("lens_id")
         if lid in known and lid not in got:
             scores.append({"lens_id": lid,
-                           "score": max(0, min(100, int(ls.get("score") or 0))),
+                           "score": _clamp100(ls.get("score")),
                            "reason": str(ls.get("reason") or "")[:200]})
             got.add(lid)
     for lid in known - got:
@@ -125,30 +142,36 @@ def _normalize(raw: dict, lenses: list[Lens]) -> dict:
     out["deadline"] = dl if isinstance(dl, str) and re.fullmatch(r"20\d{2}-\d{2}-\d{2}", dl) else None
     for k in ("event_type", "action_hint", "policy_family", "policy_stage"):
         out[k] = str(raw.get(k) or "")[:200]
+    ents = raw.get("entities")
+    out["entities"] = [e for e in ents if isinstance(e, dict)][:8] if isinstance(ents, list) else []
     return out
 
 
-def analyze_item(item_id: int) -> bool:
-    """分析单条（独立事务）。返回是否成功。"""
+def _analyze_one(item_id: int) -> str:
+    """分析单条（独立事务）。返回 ok / skip / transport（保持 new，下轮重试）/ bad（已标 failed）。"""
     with session_scope() as db:
         item = db.get(Item, item_id)
         if item is None or item.status != "new":
-            return False
+            return "skip"
         if item.cluster_of is not None:  # 同事件重复条目不重复分析
             item.status = "analyzed"
-            return True
+            return "ok"
         profile = db.get(Profile, 1)
         lenses = db.query(Lens).order_by(Lens.position).all()
         source = db.get(Source, item.source_id)
         messages = build_messages(item, source, profile, lenses)
-        try:
-            raw = chat_json(messages, model=settings.deepseek_model_flash, purpose="analyze")
-        except LlmError:
-            return False  # 传输失败：保持 new，下轮重试
-        except LlmBadOutput as e:
+        raw = None
+        for attempt in (1, 2):  # 坏输出多是偶发（空 JSON、未转义引号、截断），先当场重试一次再判死
+            try:
+                raw = chat_json(messages, model=settings.deepseek_model_flash, purpose="analyze")
+                break
+            except LlmError:
+                return "transport"
+            except LlmBadOutput as e:
+                log_event("analyst.bad_output", item=item_id, attempt=attempt, error=str(e)[:200])
+        if raw is None:
             item.status = "failed"
-            log_event("analyst.bad_output", item=item_id, error=str(e)[:200])
-            return False
+            return "bad"
         a = _normalize(raw, lenses)
         authority = source_authority(source.tier if source else 3)
         final = compute_final(a["lens_scores"], {l.id: l for l in lenses}, a["importance"], authority)
@@ -164,24 +187,44 @@ def analyze_item(item_id: int) -> bool:
         _link_entities(db, item.id, a.get("entities"))
         item.status = "analyzed"
         fts_upsert(db, item.id, item.title, a["summary"], item.content or "")
-        return True
+        return "ok"
 
 
-def analyze_pending(limit: int | None = None) -> dict:
-    """批量补分析（新→旧）。"""
-    limit = limit or settings.analyze_batch_limit
-    with session_scope() as db:
-        ids = [i for (i,) in db.query(Item.id).filter(Item.status == "new")
-               .order_by(Item.id.desc()).limit(limit).all()]
-    ok = failed = 0
-    for iid in ids:
-        if analyze_item(iid):
-            ok += 1
-        else:
-            failed += 1
-    if ids:
-        log_event("analyst.batch_done", requested=len(ids), ok=ok, failed=failed)
-    return {"requested": len(ids), "ok": ok, "failed": failed}
+def analyze_item(item_id: int) -> bool:
+    """分析单条。返回是否成功。"""
+    return _analyze_one(item_id) == "ok"
+
+
+def analyze_pending(limit: int | None = None, wait: float = 0) -> dict:
+    """批量补分析（新→旧）。同一时刻只跑一批：已有批次在跑时 wait=0 直接跳过，wait>0 最多等这么多秒。"""
+    if not (_batch_lock.acquire(timeout=wait) if wait > 0 else _batch_lock.acquire(blocking=False)):
+        log_event("analyst.batch_skipped", reason="busy")
+        return {"requested": 0, "ok": 0, "failed": 0, "busy": True}
+    try:
+        limit = limit or settings.analyze_batch_limit
+        with session_scope() as db:
+            ids = [i for (i,) in db.query(Item.id).filter(Item.status == "new")
+                   .order_by(Item.id.desc()).limit(limit).all()]
+        ok = failed = streak = 0
+        for iid in ids:
+            res = _analyze_one(iid)
+            if res == "ok":
+                ok += 1
+            else:
+                failed += 1
+            streak = streak + 1 if res == "transport" else 0
+            if streak >= _MAX_TRANSPORT_FAILS:
+                log_event("analyst.batch_aborted", reason="transport", after=ok + failed)
+                break
+        if ids:
+            log_event("analyst.batch_done", requested=len(ids), ok=ok, failed=failed)
+        return {"requested": len(ids), "ok": ok, "failed": failed}
+    finally:
+        _batch_lock.release()
+
+
+def analyst_busy() -> bool:
+    return _batch_lock.locked()
 
 
 if __name__ == "__main__":

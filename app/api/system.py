@@ -86,8 +86,12 @@ def ingest_all(background: BackgroundTasks):
 
 
 @router.post("/system/analyze")
-def analyze_now():
-    return analyze_pending()
+def analyze_now(background: BackgroundTasks, db: Session = Depends(get_db)):
+    """后台补分析：一轮最多 40 条、每条开思考数秒，同步跑会被 nginx 60s 截成 504（活其实还在跑）。"""
+    pending = db.query(func.count(Item.id)).filter(Item.status == "new").scalar() or 0
+    if pending:
+        background.add_task(analyze_pending)
+    return {"pending": pending, "queued": bool(pending)}
 
 
 @router.get("/evolution/log")

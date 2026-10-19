@@ -68,9 +68,19 @@ export function render(container, ctx) {
 
   async function generate(e) {
     const btn = e?.currentTarget;
-    if (btn) { btn.disabled = true; btn.textContent = '生成中…约20秒'; }
+    if (btn) { btn.disabled = true; btn.textContent = '生成中…约30秒'; }
     try {
-      await api.briefGenerate();
+      let s = await api.briefGenerate();
+      for (let i = 0; s.running && i < 100; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        s = await api.briefGenerateStatus();
+      }
+      if (s.running) {
+        toast('还在后台生成，稍后刷新查看');
+        if (btn) { btn.disabled = false; btn.textContent = '重新生成'; }
+        return;
+      }
+      if (s.error) throw new Error(s.error);
       toast('晨报已生成');
       await loadBrief();
     } catch (err) {

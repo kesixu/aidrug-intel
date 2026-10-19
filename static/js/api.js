@@ -27,6 +27,7 @@ export const api = {
   briefs: (limit = 14) => req(`/briefs?limit=${limit}`),
   briefByDate: (d) => req(`/briefs/${d}`),
   briefGenerate: () => req('/brief/generate', { method: 'POST' }),
+  briefGenerateStatus: () => req('/brief/generate/status'),
 
   profile: () => req('/profile'),
   saveProfile: (body) => req('/profile', { method: 'PUT', body }),
@@ -51,8 +52,8 @@ export const api = {
   decideSuggestion: (id, decision) => req(`/evolution/suggestions/${id}/${decision}`, { method: 'POST' }),
 };
 
-/* SSE：POST /chat/stream，回调 onMeta/onDelta/onError，返回完成 Promise */
-export async function chatStream(message, sessionId, { onMeta, onDelta, onError }) {
+/* SSE：POST /chat/stream，回调 onMeta/onThinking/onDelta/onError，返回完成 Promise */
+export async function chatStream(message, sessionId, { onMeta, onThinking, onDelta, onError }) {
   const r = await fetch(BASE + '/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -77,6 +78,7 @@ export async function chatStream(message, sessionId, { onMeta, onDelta, onError 
         let d;
         try { d = JSON.parse(line.slice(6)); } catch { continue; }
         if (event === 'meta') onMeta?.(d);
+        else if (event === 'thinking') onThinking?.(d.s || 0);
         else if (event === 'delta') onDelta?.(d.text || '');
         else if (event === 'error') onError?.(d.message || '未知错误');
       }

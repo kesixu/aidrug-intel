@@ -121,7 +121,7 @@ export function render(container, ctx) {
           }, '↻ 全量抓取'),
           h('button', {
             class: 'btn small',
-            onclick: async () => { try { const r = await api.analyzeNow(); toast(`补分析：成功 ${r.ok} 条`); } catch (err) { toast(err.message); } },
+            onclick: async () => { try { const r = await api.analyzeNow(); toast(r.pending ? `已在后台补分析，待分析 ${r.pending} 条` : '没有待分析的条目'); } catch (err) { toast(err.message); } },
           }, '⚡ 补分析')),
         ...sources.map((s) => h('div', { class: 'src-row' },
           h('span', { class: `dot ${s.health}` }),

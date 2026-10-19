@@ -84,6 +84,7 @@ export function render(container, ctx) {
     try {
       await chatStream(text, state.sessionId, {
         onMeta: (m) => { state.sessionId = m.session_id; citations = m.citations || []; },
+        onThinking: (s) => { if (!acc) md.textContent = s ? `思考中… ${s}s` : '思考中…'; },
         onDelta: (t) => {
           acc += t;
           md.innerHTML = mdRender(acc);

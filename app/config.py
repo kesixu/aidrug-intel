@@ -14,8 +14,8 @@ class Settings(BaseSettings):
     # DeepSeek（保持无前缀的惯用环境变量名）
     deepseek_api_key: str = Field(default="", validation_alias="DEEPSEEK_API_KEY")
     deepseek_base_url: str = Field(default="https://api.deepseek.com", validation_alias="DEEPSEEK_BASE_URL")
-    deepseek_model_pro: str = Field(default="deepseek-v4-pro", validation_alias="DEEPSEEK_MODEL_PRO")      # 对话/晨报/进化
-    deepseek_model_flash: str = Field(default="deepseek-v4-flash", validation_alias="DEEPSEEK_MODEL_FLASH")  # 批量条目分析
+    deepseek_model_pro: str = Field(default="deepseek-flash", validation_alias="DEEPSEEK_MODEL_PRO")      # 对话/晨报/进化（2026-10-17 起与 flash 同为 V4.1 Flash）
+    deepseek_model_flash: str = Field(default="deepseek-flash", validation_alias="DEEPSEEK_MODEL_FLASH")  # 批量条目分析
     # 单价（元 / 百万 token），仅用于费用估算展示，可在 .env 覆盖
     price_flash_in: float = 0.5
     price_flash_out: float = 2.0

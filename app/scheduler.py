@@ -40,7 +40,7 @@ def _brief_job():
     from app.llm.analyst import analyze_pending
     from app.llm.briefing import generate_brief
     try:
-        analyze_pending()  # 出报前把存量分析完
+        analyze_pending(wait=900)  # 出报前把存量分析完；正赶上一轮补分析就等它跑完
         generate_brief(force=False)
     except Exception as e:
         log_event("scheduler.brief_error", error=f"{type(e).__name__}: {e}")
@@ -64,9 +64,12 @@ def start_scheduler() -> None:
                     id="ingest", name="采集到期源", max_instances=1, coalesce=True)
         sch.add_job(_analyze_tick, IntervalTrigger(minutes=10),
                     id="analyze", name="补分析", max_instances=1, coalesce=True)
-        sch.add_job(_brief_job, CronTrigger(hour=settings.brief_hour, minute=settings.brief_minute),
+        # 直接构造的 CronTrigger 不继承调度器时区、默认用主机时区（UTC），必须显式给：
+        # 漏给时晨报一直在北京时间 15:30 出
+        sch.add_job(_brief_job, CronTrigger(hour=settings.brief_hour, minute=settings.brief_minute,
+                                            timezone=settings.tz),
                     id="brief", name="每日晨报", max_instances=1, coalesce=True)
-        sch.add_job(_evolve_job, CronTrigger(day_of_week="sun", hour=21, minute=0),
+        sch.add_job(_evolve_job, CronTrigger(day_of_week="sun", hour=21, minute=0, timezone=settings.tz),
                     id="evolve", name="每周进化", max_instances=1, coalesce=True)
         sch.start()
         _scheduler = sch

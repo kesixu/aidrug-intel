@@ -68,10 +68,15 @@ async def chat_sse(body: ChatIn):
         yield _sse("meta", {"session_id": turn["session_id"], "citations": turn["citations"]})
         parts: list[str] = []
         try:
-            async for delta in chat_stream(turn["messages"], model=settings.deepseek_model_pro,
-                                           purpose="chat"):
-                parts.append(delta)
-                yield _sse("delta", {"text": delta})
+            async for kind, value in chat_stream(turn["messages"], model=settings.deepseek_model_pro,
+                                                 purpose="chat"):
+                if kind == "thinking":
+                    yield _sse("thinking", {"s": value})
+                    continue
+                if kind == "truncated":
+                    value = "\n\n> ⚠ 回答达到长度上限，后面被截断了。"
+                parts.append(value)
+                yield _sse("delta", {"text": value})
         except LlmError as e:
             yield _sse("error", {"message": f"模型服务暂时不可用：{e}"})
             return
