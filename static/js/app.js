@@ -7,6 +7,7 @@ import * as feed from './views/feed.js';
 import * as chat from './views/chat.js';
 import * as insight from './views/insight.js';
 import * as atlas from './views/atlas.js';
+import * as companies from './views/companies.js';
 import * as me from './views/me.js';
 
 const ICONS = {
@@ -14,6 +15,7 @@ const ICONS = {
   feed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>',
   insight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   atlas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="12" cy="19" r="2.2"/><path d="M6.8 7.2 10.8 17M17.3 6.2 13.3 17.3M7 6.4 17 5.4"/></svg>',
+  companies: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7h6v14"/><path d="M13 21V4h6v17"/><path d="M8 10h.01M8 14h.01M16 8h.01M16 12h.01M16 16h.01"/></svg>',
   me: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>',
 };
 
@@ -23,10 +25,12 @@ const VIEWS = [
   { id: 'chat', label: '问', mod: chat, ask: true },
   { id: 'insight', label: '洞察', mod: insight },
   { id: 'atlas', label: '图谱', mod: atlas },
+  { id: 'companies', label: '公司', mod: companies },
   { id: 'me', label: '我的', mod: me },
 ];
 
 let current = null;
+let currentPath = '';
 let cleanup = null;
 let feedDetailPane = null;
 
@@ -106,11 +110,14 @@ async function openEntityByName(name) {
 /* ── 路由 ── */
 function navigate(viewId, { push = true } = {}) {
   const view = VIEWS.find((v) => v.id === viewId) || VIEWS[0];
-  if (current === view.id) return;
+  const path = location.hash;
+  // 子路径（#/companies/astrazeneca）也要触发重渲染，所以连 hash 一起比
+  if (current === view.id && currentPath === path) return;
   cleanup?.();
   cleanup = null;
   closeSheet(true);
   current = view.id;
+  currentPath = path;
   if (push) location.hash = `#/${view.id}`;
 
   document.querySelectorAll('[data-nav]').forEach((el) => {
@@ -174,11 +181,11 @@ async function boot() {
     for (const l of p.lenses) ctx.lensNames[l.id] = l.name;
   } catch { /* 首屏容错 */ }
 
-  const start = (location.hash.match(/^#\/(\w+)/) || [])[1];
+  const start = (location.hash.match(/^#\/([\w-]+)/) || [])[1];
   navigate(VIEWS.some((v) => v.id === start) ? start : 'today', { push: false });
   window.addEventListener('hashchange', () => {
-    const id = (location.hash.match(/^#\/(\w+)/) || [])[1];
-    if (id && id !== current) navigate(id, { push: false });
+    const id = (location.hash.match(/^#\/([\w-]+)/) || [])[1];
+    if (id) navigate(id, { push: false });
   });
 
   loadSidebarFoot();

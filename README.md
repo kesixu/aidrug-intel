@@ -62,6 +62,7 @@ python3 -m app.llm.analyst
 | `app/api/` | REST API（/api/v1，文档 /api/docs） |
 | `app/scheduler.py` | 进程内调度（Asia/Shanghai） |
 | `static/` | 前端（无构建 Vanilla ES modules） |
+| `static/js/data/companies.js` | 药企深读档案（「公司」专栏数据源，加一家公司=加一条对象） |
 | `docs/plans/2026-07-07-rebuild-v1.md` | 完整设计文档 |
 | `docs/research/` | 外部技术报告/论文的深度分析（含原件索引） |
 | `data/raw/` | 外部原件（PDF/文本，gitignored） |
