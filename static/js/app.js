@@ -1,272 +1,306 @@
-/* AI for Science 大陆情报系统 — 前端逻辑 */
-const API = '/api';
-let currentView = 'timeline';
-let currentData = [];
-let stats = {};
+/* 见微 · 外壳：路由、导航、主题、快捷键 */
+import { api } from './api.js';
+import { closeSheet, detailContent, initSheet, openSheet, sheetIsOpen, toast } from './components.js';
+import { fmtDateCN, h, shanghaiToday, weekdayCN } from './util.js';
+import * as today from './views/today.js';
+import * as feed from './views/feed.js';
+import * as chat from './views/chat.js';
+import * as insight from './views/insight.js';
+import * as atlas from './views/atlas.js';
+import * as companies from './views/companies.js';
+import * as me from './views/me.js';
 
-// ─── Init ───
-document.addEventListener('DOMContentLoaded', () => {
-  loadStats();
-  loadTimeline();
-  setupEventListeners();
-});
+const ICONS = {
+  today: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  feed: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>',
+  insight: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  atlas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2.2"/><circle cx="19" cy="5" r="2.2"/><circle cx="12" cy="19" r="2.2"/><path d="M6.8 7.2 10.8 17M17.3 6.2 13.3 17.3M7 6.4 17 5.4"/></svg>',
+  companies: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7h6v14"/><path d="M13 21V4h6v17"/><path d="M8 10h.01M8 14h.01M16 8h.01M16 12h.01M16 16h.01"/></svg>',
+  me: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 1 1 18 0z"/></svg>',
+};
 
-function setupEventListeners() {
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchView(btn.dataset.view));
+const VIEWS = [
+  { id: 'today', label: '今日', mod: today },
+  { id: 'feed', label: '情报', mod: feed },
+  { id: 'chat', label: '问', mod: chat },
+  { id: 'insight', label: '洞察', mod: insight },
+  { id: 'atlas', label: '图谱', mod: atlas },
+  { id: 'companies', label: '公司', mod: companies },
+  { id: 'me', label: '我的', mod: me },
+];
+const PRIMARY = ['today', 'feed', 'chat', 'companies', 'me'];
+const GO = { t: 'today', f: 'feed', q: 'chat', c: 'companies', m: 'me', i: 'insight', a: 'atlas' };
+
+let current = null;
+let currentPath = '';
+let cleanup = null;
+let feedDetailPane = null;
+let echoHash = null;
+let goArmed = false;
+let goTimer = 0;
+
+const ctx = {
+  lensNames: {},
+  openItem,
+  openEntity,
+  setFeedDetailPane: (el) => { feedDetailPane = el; },
+};
+
+function themePref() {
+  return localStorage.getItem('theme') || 'auto';
+}
+function themeWord(pref = themePref()) {
+  return { auto: '自动', dark: '暗色', light: '亮色' }[pref] || '自动';
+}
+
+window.__applyTheme = () => {
+  const pref = themePref();
+  const dark = pref === 'dark' || (pref === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#12110e' : '#f4f0e6');
+  document.querySelectorAll('.js-theme').forEach((el) => { el.textContent = themeWord(pref); });
+  document.querySelectorAll('[data-theme-choice]').forEach((el) => {
+    el.classList.toggle('active', el.dataset.themeChoice === pref);
   });
-  document.getElementById('search-input').addEventListener('input', debounce(loadTimeline, 300));
-  document.getElementById('filter-category').addEventListener('change', loadTimeline);
-  document.getElementById('filter-region').addEventListener('change', loadTimeline);
-  document.getElementById('filter-score').addEventListener('change', loadTimeline);
+};
+
+function cycleTheme() {
+  const order = ['auto', 'light', 'dark'];
+  const next = order[(order.indexOf(themePref()) + 1) % order.length];
+  localStorage.setItem('theme', next);
+  window.__applyTheme();
+  toast(`主题：${themeWord(next)}`);
 }
 
-// ─── View Switching ───
-function switchView(view) {
-  currentView = view;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-  document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
-  document.getElementById('view-' + view).style.display = 'block';
-  if (view === 'timeline') loadTimeline();
-  else if (view === 'lineages') loadLineages();
-  else if (view === 'sources') loadSources();
-}
-
-// ─── Stats ───
-async function loadStats() {
+async function openItem(id) {
   try {
-    const r = await fetch(API + '/stats');
-    stats = await r.json();
-    document.getElementById('stats-bar').innerHTML = `
-      <span>总计 <strong>${stats.total}</strong> 条</span>
-      <span class="highlight">高优先级 <strong>${stats.high_priority}</strong></span>
-      <span>需跟进 <strong>${stats.need_followup}</strong></span>
-    `;
-  } catch(e) { console.error(e); }
-}
-
-// ─── Timeline ───
-async function loadTimeline() {
-  const container = document.getElementById('timeline-container');
-  container.innerHTML = '<div class="loading">加载中...</div>';
-
-  const params = new URLSearchParams();
-  const search = document.getElementById('search-input').value.trim();
-  const category = document.getElementById('filter-category').value;
-  const region = document.getElementById('filter-region').value;
-  const score = document.getElementById('filter-score').value;
-
-  if (search) params.set('search', search);
-  if (category) params.set('category', category);
-  if (region) params.set('region_tier', region);
-  if (score) params.set('min_score', score);
-  params.set('limit', '100');
-
-  try {
-    const r = await fetch(API + '/intel?' + params.toString());
-    const j = await r.json();
-    currentData = j.data;
-    if (j.data.length === 0) {
-      container.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>暂无情报条目</p><p style="font-size:12px">系统将每日自动抓取新情报</p></div>';
-      return;
+    const d = await api.item(id);
+    if (!d.user?.read) api.feedback(id, 'read').catch(() => {});
+    const content = detailContent(d, { lensNames: ctx.lensNames, onOpenItem: openItem, onOpenEntity: openEntityByName });
+    const desktop = matchMedia('(min-width: 1024px)').matches;
+    if (desktop && current === 'feed' && feedDetailPane) {
+      feedDetailPane.replaceChildren(content);
+      feedDetailPane.scrollTop = 0;
+      feedDetailPane.querySelectorAll('.intel-card').forEach(() => {});
+    } else {
+      openSheet(content);
     }
-    container.innerHTML = j.data.map(e => renderCard(e)).join('');
-    bindCardClicks();
-  } catch(e) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>加载失败</p></div>';
+  } catch (e) {
+    toast('这条没打开：' + e.message);
   }
 }
 
-function renderCard(e) {
-  const rs = e.relevance_score || {};
-  const highPrio = rs.overall >= 4;
-  const midPrio = rs.overall >= 2 && rs.overall < 4;
-  const priorityClass = highPrio ? 'high-priority' : (midPrio ? 'medium-priority' : '');
-
-  const tagClass = {
-    '政策发布': 'tag-policy', '实施细则': 'tag-policy',
-    '资金申报': 'tag-funding', '人才政策': 'tag-talent',
-    '监管动态': 'tag-regulatory', '企业动态': 'tag-enterprise',
-    '学术会议': 'tag-academic', '产业数据': 'tag-industry',
-  };
-
-  const scores = [
-    { label: '综合', val: rs.overall },
-    { label: 'AZ', val: rs.az_beijing },
-    { label: 'TPB', val: rs.trustpathbot },
-    { label: '人才', val: rs.talent_program },
-    { label: '资金', val: rs.funding_opportunity },
-  ];
-
-  const scoreDots = scores.map(s => {
-    const cls = s.val >= 4 ? 'high' : (s.val >= 2 ? 'mid' : 'low');
-    const filled = Array(Math.min(s.val || 0, 5)).fill(0).map(() => `<span class="score-dot filled ${cls}"></span>`).join('');
-    const empty = Array(Math.max(5 - (s.val || 0), 0)).fill(0).map(() => `<span class="score-dot"></span>`).join('');
-    return `<span title="${s.label}: ${s.val || 0}/5" style="display:flex;gap:2px">${filled}${empty}</span>`;
-  }).join('');
-
-  const summary = e.ai_interpretation ? e.ai_interpretation.slice(0, 120) + (e.ai_interpretation.length > 120 ? '...' : '') : '';
-
-  const statusBadge = e.user_status ? `<span style="font-size:11px;background:#eee;padding:2px 6px;border-radius:10px">${e.user_status}</span>` : '';
-  const noteIcon = e.user_note ? ' 📝' : '';
-
-  return `
-<div class="intel-card ${priorityClass}" id="card-${e.id}">
-  <div class="card-header">
-    <div>
-      <div class="card-title" data-id="${e.id}">${escHtml(e.title)}${noteIcon}</div>
-      <div class="tag-row">
-        <span class="tag ${tagClass[e.category] || 'tag-policy'}">${e.category || '未分类'}</span>
-        <span class="tag tag-region">${e.region_tier || '未知'}</span>
-        ${statusBadge}
-      </div>
-    </div>
-    <div class="card-meta">
-      <div>${e.date_published || ''}</div>
-      <div style="margin-top:4px">${scoreDots}</div>
-    </div>
-  </div>
-  <div class="card-summary">${escHtml(summary)}</div>
-  <div class="card-expanded" id="expand-${e.id}">
-    ${e.original_excerpt ? '<h4>原文摘要</h4><p>' + escHtml(e.original_excerpt) + '</p>' : ''}
-    ${e.ai_interpretation ? '<h4>解读</h4><p>' + escHtml(e.ai_interpretation) + '</p>' : ''}
-    ${e.relevance_reasoning ? '<h4>关联分析</h4><p>' + escHtml(e.relevance_reasoning) + '</p>' : ''}
-    ${e.forecast ? '<h4>预判</h4><p>' + escHtml(e.forecast) + '</p>' : ''}
-    ${e.recommended_action ? '<div class="action-box"><strong>建议行动：</strong>' + escHtml(e.recommended_action) + '</div>' : ''}
-    ${e.source_url ? '<p style="font-size:11px;margin-top:4px">📎 <a href="' + escHtml(e.source_url) + '" target="_blank" rel="noopener">' + escHtml(e.source_url) + '</a></p>' : ''}
-    <div class="card-actions">
-      <select onchange="updateStatus('${e.id}', this.value)" style="font-size:12px">
-        <option value="">标记状态...</option>
-        <option value="已读" ${e.user_status === '已读' ? 'selected' : ''}>已读</option>
-        <option value="需跟进" ${e.user_status === '需跟进' ? 'selected' : ''}>需跟进</option>
-        <option value="已过时" ${e.user_status === '已过时' ? 'selected' : ''}>已过时</option>
-      </select>
-      <button onclick="addNote('${e.id}')">备注</button>
-    </div>
-  </div>
-</div>`;
-}
-
-function bindCardClicks() {
-  document.querySelectorAll('.card-title').forEach(el => {
-    el.addEventListener('click', () => {
-      const id = el.dataset.id;
-      const expand = document.getElementById('expand-' + id);
-      if (expand) expand.classList.toggle('show');
-    });
-  });
-}
-
-// ─── Status & Notes ───
-async function updateStatus(id, status) {
-  if (!status) return;
-  await fetch(API + '/intel/' + id, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({user_status: status})
-  });
-  loadTimeline();
-  loadStats();
-}
-
-function addNote(id) {
-  const note = prompt('添加备注：');
-  if (note === null) return;
-  fetch(API + '/intel/' + id, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({user_note: note})
-  }).then(() => loadTimeline());
-}
-
-// ─── Policy Lineages ───
-async function loadLineages() {
-  const container = document.getElementById('lineages-container');
-  container.innerHTML = '<div class="loading">加载中...</div>';
+async function openEntity(entityId) {
   try {
-    const r = await fetch(API + '/policy-lineages');
-    const j = await r.json();
-    if (j.data.length === 0) {
-      container.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>暂无政策家族追踪</p></div>';
-      return;
-    }
-    container.innerHTML = j.data.map(fam => {
-      const stages = ['发布', '官方解读', '配套细则', '资金申报', '结果产出'];
-      const doneStages = fam.stages || [];
-      const entriesHtml = fam.entries.map(e => `<div style="font-size:12px;margin-left:12px">• ${e.date} — ${escHtml(e.title)} [${e.stage}]</div>`).join('');
-      return `
-<div class="lineage-bar">
-  <h3>${escHtml(fam.name)}</h3>
-  <div class="lifecycle-track">
-    ${stages.map(s => {
-      const isDone = doneStages.includes(s) || doneStages.has(s);
-      return `<div class="lifecycle-step ${isDone ? 'done' : ''}"><div class="step-label">${s}</div></div>`;
-    }).join('')}
-  </div>
-  ${entriesHtml}
-</div>`;
-    }).join('');
-  } catch(e) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p>加载失败</p></div>';
+    const { entity, items } = await api.entityTimeline(entityId);
+    const list = h('div', {},
+      h('h2', { class: 'detail-title' }, `${entity.name}`),
+      h('p', { class: 'muted' }, '时间线'),
+      h('div', { class: 'detail-actions' },
+        h('button', {
+          type: 'button',
+          class: 'chip chip-btn' + (entity.watch ? ' active' : ''),
+          onclick: async (e) => {
+            const w = !entity.watch;
+            await api.watchEntity(entity.id, w);
+            entity.watch = w;
+            e.currentTarget.classList.toggle('active', w);
+            e.currentTarget.textContent = w ? '已关注' : '关注';
+            toast(w ? '已关注' : '已取消关注');
+          },
+        }, entity.watch ? '已关注' : '关注')),
+      items.length
+        ? items.map((it) => h('div', { class: 'lineage-entry', onclick: () => openItem(it.id) },
+            h('span', { class: 'dt' }, it.published_at),
+            h('span', {}, it.title)))
+        : h('p', { class: 'muted' }, '还没有相关条目'));
+    openSheet(list);
+  } catch (e) {
+    toast(e.message);
   }
 }
 
-// ─── Source Map ───
-function loadSources() {
-  const container = document.getElementById('sources-container');
-  const sources = {
-    'Tier 1 — 亦庄/BioPark 最高优先级': [
-      {name:'北京亦庄工作动态', url:'https://open.beijing.gov.cn/html/yizhuang/gzdt/', desc:'镜像亦庄微信公众号内容'},
-      {name:'开发区管委会政务公开', url:'https://kfqgw.beijing.gov.cn/zwgkkfq/', desc:'政策发布与公告'},
-      {name:'国际科创中心-亦庄专栏', url:'https://www.ncsti.gov.cn/kjdt/scyq/bjjjjskfq/jkdt/', desc:'科技动态'},
-      {name:'国家药监局 NMPA', url:'https://www.nmpa.gov.cn', desc:'关注京津冀分中心公告'},
-      {name:'AstraZeneca 中国', url:'https://www.astrazeneca.com.cn', desc:'AZ 中国 newsroom'},
-    ],
-    'Tier 2 — 市级（科委中关村）': [
-      {name:'北京市科委-政策文件', url:'https://kw.beijing.gov.cn/zwgk/zcwj/', desc:'核心政策来源'},
-      {name:'北京市科委-政策解读', url:'https://kw.beijing.gov.cn/zwgk/zcjd/', desc:'官方解读文件'},
-      {name:'国际科创中心-政策法规', url:'https://www.ncsti.gov.cn/zcfg/', desc:'政策总栏'},
-      {name:'首都之窗', url:'https://www.beijing.gov.cn', desc:'北京市政府门户'},
-    ],
-    'Tier 3 — 行业/媒体/学术': [
-      {name:'动脉网', url:'https://vcbeat.net', desc:'医药/医疗AI产业新闻'},
-      {name:'医药魔方', url:'https://pharmcube.com', desc:'医药行业数据'},
-      {name:'MICCAI', url:'https://conferences.miccai.org', desc:'医学影像AI顶会'},
-      {name:'ISBI', url:'https://biomedicalimaging.org', desc:'生物医学成像'},
-    ],
-    'Tier 4 — 全国背景（低频监控）': [
-      {name:'科技部', url:'https://www.most.gov.cn', desc:'国家科技政策'},
-      {name:'国家卫健委', url:'https://www.nhc.gov.cn', desc:'医疗卫生政策'},
-    ],
-  };
-
-  container.innerHTML = Object.entries(sources).map(([tier, items]) => {
-    const tierNum = tier.split(' ')[0].replace('Tier', 't');
-    return `
-<div class="source-tier ${tierNum}">
-  <h3>${tier}</h3>
-  <div class="source-grid">
-    ${items.map(s => `
-      <div class="source-card">
-        <div class="src-name">${escHtml(s.name)}</div>
-        <div class="src-url"><a href="${escHtml(s.url)}" target="_blank" rel="noopener">${escHtml(s.url)}</a></div>
-        <div class="src-desc">${escHtml(s.desc)}</div>
-      </div>
-    `).join('')}
-  </div>
-</div>`;
-  }).join('');
+async function openEntityByName(name) {
+  try {
+    const { entities } = await api.entities({ q: name });
+    const hit = entities.find((e) => e.name === name) || entities[0];
+    if (hit) return openEntity(hit.id);
+    const created = await api.createEntity({ name, kind: 'other' });
+    toast(`已关注「${name}」`);
+    return openEntity(created.id);
+  } catch (e) {
+    toast(e.message);
+  }
 }
 
-// ─── Utils ───
-function escHtml(s) {
-  if (!s) return '';
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function closeMore() {
+  const pop = document.getElementById('more-pop');
+  const btn = document.getElementById('more-toggle');
+  pop?.setAttribute('hidden', '');
+  btn?.setAttribute('aria-expanded', 'false');
 }
-function debounce(fn, ms) {
-  let timer;
-  return function(...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), ms);
-  };
+
+function toggleMore() {
+  const pop = document.getElementById('more-pop');
+  const btn = document.getElementById('more-toggle');
+  const open = pop.hasAttribute('hidden');
+  if (open) pop.removeAttribute('hidden');
+  else pop.setAttribute('hidden', '');
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
+
+function setHelp(open) {
+  document.getElementById('help').toggleAttribute('hidden', !open);
+}
+
+function navigate(viewId, { push = true } = {}) {
+  const view = VIEWS.find((v) => v.id === viewId) || VIEWS[0];
+  const hash = location.hash;
+  const target = push
+    ? `#/${view.id}`
+    : (hash.startsWith(`#/${view.id}`) ? hash : `#/${view.id}`);
+  if (current === view.id && currentPath === target) return;
+
+  cleanup?.();
+  cleanup = null;
+  closeSheet(true);
+  closeMore();
+  current = view.id;
+  currentPath = target;
+  if (location.hash !== target) {
+    echoHash = target;
+    location.hash = target;
+  }
+
+  document.querySelectorAll('[data-nav]').forEach((el) => {
+    const on = el.dataset.nav === view.id;
+    el.classList.toggle('active', on);
+    if (on) el.setAttribute('aria-current', 'page');
+    else el.removeAttribute('aria-current');
+  });
+  document.getElementById('more-toggle')?.classList.toggle('active', view.id === 'insight' || view.id === 'atlas');
+  document.getElementById('top-title').textContent = view.label;
+
+  const container = document.getElementById('view');
+  container.className = '';
+  container.dataset.view = view.id;
+  container.replaceChildren();
+  container.scrollTop = 0;
+  const ret = view.mod.render(container, ctx);
+  if (typeof ret === 'function') cleanup = ret;
+}
+
+function buildNav() {
+  const tabbar = document.getElementById('tabbar');
+  const sidenav = document.getElementById('side-nav');
+  for (const v of VIEWS) {
+    sidenav.append(h('button', {
+      type: 'button', class: 'nav-item', 'data-nav': v.id,
+      onclick: () => navigate(v.id),
+    }, h('span', { html: ICONS[v.id] || ICONS.chat }), v.label));
+  }
+  for (const id of PRIMARY) {
+    const v = VIEWS.find((x) => x.id === id);
+    tabbar.append(h('button', {
+      type: 'button', class: 'tab', 'data-nav': v.id,
+      onclick: () => navigate(v.id),
+    }, h('span', { html: ICONS[v.id] || ICONS.chat }), v.label));
+  }
+  document.querySelectorAll('#more-pop [data-nav]').forEach((el) => {
+    el.addEventListener('click', () => navigate(el.dataset.nav));
+  });
+}
+
+function typingTarget(e) {
+  const t = e.target;
+  if (!t || !t.tagName) return false;
+  return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable;
+}
+
+function onKey(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+  if (e.key === 'Escape') {
+    const help = document.getElementById('help');
+    if (help && !help.hasAttribute('hidden')) { setHelp(false); return; }
+    const pop = document.getElementById('more-pop');
+    if (pop && !pop.hasAttribute('hidden')) { closeMore(); return; }
+    if (sheetIsOpen()) { closeSheet(); return; }
+    return;
+  }
+  if (typingTarget(e)) return;
+  if (e.key === '?') { e.preventDefault(); setHelp(true); return; }
+  if (goArmed) {
+    goArmed = false;
+    clearTimeout(goTimer);
+    const dest = GO[e.key.toLowerCase()];
+    if (dest) { e.preventDefault(); navigate(dest); }
+    return;
+  }
+  if (e.key === 'g') {
+    goArmed = true;
+    clearTimeout(goTimer);
+    goTimer = setTimeout(() => { goArmed = false; }, 1200);
+    return;
+  }
+  if (current === 'feed' && window.__feedKeys?.(e)) e.preventDefault();
+}
+
+async function loadSidebarFoot() {
+  try {
+    const s = await api.status();
+    const dot = document.getElementById('health-dot');
+    const down = s.sources.down || 0;
+    dot.className = 'health-dot' + (down > 1 ? ' bad' : (s.sources.degraded || down ? ' warn' : ''));
+    dot.title = `情报源：正常 ${s.sources.ok}，异常 ${(s.sources.degraded || 0) + down}`;
+    const foot = document.getElementById('side-foot');
+    if (foot) {
+      foot.replaceChildren(
+        h('button', { type: 'button', class: 'btn small ghost js-theme', onclick: cycleTheme }, themeWord()),
+        h('div', { class: 'row' }, h('span', {}, fmtDateCN().replace(/^\d+年/, '') + ' ' + weekdayCN()), h('span', { class: 'mono' }, shanghaiToday().slice(5))),
+        h('div', { class: 'row' }, h('span', {}, '今日新增'), h('span', { class: 'mono' }, String(s.items.new_today))),
+        h('div', { class: 'row' }, h('span', {}, '本月费用'), h('span', { class: 'mono' }, `¥${s.llm.cost_month}`)),
+        h('div', { class: 'row' }, h('span', {}, '情报源'), h('span', { class: 'mono' }, `${s.sources.ok} 正常`)));
+    }
+  } catch { /* 顶栏状态失败不挡阅读 */ }
+}
+
+async function boot() {
+  window.__applyTheme();
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', window.__applyTheme);
+  initSheet();
+  buildNav();
+  document.getElementById('top-date').textContent = `${fmtDateCN().slice(5)} ${weekdayCN()}`;
+  document.getElementById('theme-toggle').addEventListener('click', cycleTheme);
+  document.getElementById('more-toggle').addEventListener('click', (e) => { e.stopPropagation(); toggleMore(); });
+  document.getElementById('help-close').addEventListener('click', () => setHelp(false));
+  document.getElementById('help').addEventListener('click', (e) => { if (e.target.id === 'help') setHelp(false); });
+  document.getElementById('health-dot').addEventListener('click', () => navigate('me'));
+  document.getElementById('health-dot').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') navigate('me');
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#more-pop, #more-toggle')) closeMore();
+  });
+  window.addEventListener('keydown', onKey);
+
+  try {
+    const p = await api.profile();
+    for (const l of p.lenses) ctx.lensNames[l.id] = l.name;
+  } catch { /* 首屏没有画像也不白屏 */ }
+
+  const start = (location.hash.match(/^#\/([\w-]+)/) || [])[1];
+  navigate(VIEWS.some((v) => v.id === start) ? start : 'today', { push: !start });
+  window.addEventListener('hashchange', () => {
+    if (echoHash && location.hash === echoHash) { echoHash = null; return; }
+    echoHash = null;
+    const id = (location.hash.match(/^#\/([\w-]+)/) || [])[1];
+    if (id) navigate(id, { push: false });
+  });
+
+  loadSidebarFoot();
+  setInterval(loadSidebarFoot, 120000);
+}
+
+boot();

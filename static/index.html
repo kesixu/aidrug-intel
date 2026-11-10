@@ -1,72 +1,70 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI for Science 大陆情报系统</title>
-<link rel="stylesheet" href="/static/css/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>见微 · AI for Science 情报</title>
+  <meta name="description" content="见微知著 —— 你的私人 AI4S 大陆情报分析师">
+  <meta name="theme-color" content="#f4f0e6">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="见微">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icons/seal.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icons/seal-180.png">
+  <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
-<div class="app-wrap">
-  <header>
-    <div>
-      <h1>AI for Science 大陆情报系统</h1>
-      <div class="sub">Phase 1 — 北京 · 亦庄 BioPark 深度监测</div>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="brand">
+        <span class="brand-seal" aria-hidden="true">微</span>
+        <div>
+          <div class="brand-name">见微</div>
+          <div class="brand-sub">AI4S 大陆情报</div>
+        </div>
+      </div>
+      <nav id="side-nav" aria-label="主导航"></nav>
+      <div class="side-foot" id="side-foot"></div>
+    </aside>
+
+    <div id="main">
+      <header id="topbar">
+        <span class="brand-seal" aria-hidden="true">微</span>
+        <span class="top-title" id="top-title">今日</span>
+        <span class="spacer"></span>
+        <span class="top-date" id="top-date"></span>
+        <button type="button" id="theme-toggle" class="icon-btn js-theme" aria-label="切换主题">自动</button>
+        <button type="button" id="more-toggle" class="icon-btn" aria-label="更多视图" aria-expanded="false">更多</button>
+        <span class="health-dot" id="health-dot" role="link" tabindex="0" title="系统状态"></span>
+      </header>
+      <div id="more-pop" class="more-pop" hidden>
+        <button type="button" data-nav="insight">洞察</button>
+        <button type="button" data-nav="atlas">图谱</button>
+      </div>
+      <main id="view" data-view="today"></main>
     </div>
-  </header>
-
-  <nav class="tabs">
-    <button class="tab-btn active" data-view="timeline">📰 时间线</button>
-    <button class="tab-btn" data-view="lineages">🔗 政策生命周期</button>
-    <button class="tab-btn" data-view="sources">🗺️ 信息源地图</button>
-  </nav>
-
-  <div class="stats-bar" id="stats-bar"></div>
-
-  <div class="toolbar" id="toolbar-timeline">
-    <input type="text" id="search-input" placeholder="搜索标题、内容、发文机构...">
-    <select id="filter-category">
-      <option value="">全部分类</option>
-      <option value="政策发布">政策发布</option>
-      <option value="实施细则">实施细则</option>
-      <option value="资金申报">资金申报</option>
-      <option value="人才政策">人才政策</option>
-      <option value="监管动态">监管动态</option>
-      <option value="企业动态">企业动态</option>
-      <option value="学术会议">学术会议</option>
-      <option value="产业数据">产业数据</option>
-    </select>
-    <select id="filter-region">
-      <option value="">全部地域</option>
-      <option value="亦庄BDA">亦庄 BDA</option>
-      <option value="市级">市级</option>
-      <option value="京津冀">京津冀</option>
-      <option value="全国">全国</option>
-    </select>
-    <select id="filter-score">
-      <option value="">全部评分</option>
-      <option value="4">≥4 高相关</option>
-      <option value="3">≥3</option>
-      <option value="2">≥2</option>
-    </select>
   </div>
 
-  <!-- Timeline View -->
-  <div class="view" id="view-timeline">
-    <div id="timeline-container"></div>
+  <nav id="tabbar" aria-label="手机导航"></nav>
+
+  <div id="overlay"></div>
+  <div id="sheet" role="dialog" aria-modal="true" aria-label="详情">
+    <div class="sheet-handle"></div>
+    <div class="sheet-body"></div>
+  </div>
+  <div id="toast" role="status"></div>
+  <div id="help" class="help" hidden>
+    <div class="help-card" role="dialog" aria-label="键盘快捷键">
+      <h2>键盘</h2>
+      <p><kbd>g</kbd> 然后 <kbd>t</kbd> 今日 · <kbd>f</kbd> 情报 · <kbd>q</kbd> 问 · <kbd>c</kbd> 公司 · <kbd>m</kbd> 我的 · <kbd>i</kbd> 洞察 · <kbd>a</kbd> 图谱</p>
+      <p>情报页：<kbd>j</kbd><kbd>k</kbd> 选择 · <kbd>Enter</kbd> 打开 · <kbd>s</kbd> 收藏 · <kbd>f</kbd> 跟进 · <kbd>/</kbd> 搜索</p>
+      <p><kbd>1</kbd> 全部 · <kbd>2</kbd> 必读 · <kbd>3</kbd> 关注 · <kbd>4</kbd> 扫一眼 · <kbd>5</kbd> 归档 · <kbd>6</kbd> 收藏 · <kbd>7</kbd> 跟进 · <kbd>8</kbd> 临期</p>
+      <p><kbd>?</kbd> 打开本页 · <kbd>Esc</kbd> 关闭</p>
+      <button type="button" class="btn small" id="help-close">知道了</button>
+    </div>
   </div>
 
-  <!-- Lineages View -->
-  <div class="view" id="view-lineages" style="display:none">
-    <div id="lineages-container"></div>
-  </div>
-
-  <!-- Sources View -->
-  <div class="view" id="view-sources" style="display:none">
-    <div id="sources-container"></div>
-  </div>
-</div>
-
-<script src="/static/js/app.js"></script>
+  <script type="module" src="/static/js/app.js"></script>
 </body>
 </html>

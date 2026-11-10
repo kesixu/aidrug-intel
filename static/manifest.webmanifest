@@ -1,0 +1,15 @@
+{
+  "name": "见微 · AI for Science 大陆情报",
+  "short_name": "见微",
+  "description": "见微知著 —— 你的私人 AI4S 大陆情报分析师",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0c10",
+  "theme_color": "#0a0c10",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/static/icons/seal.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/static/icons/seal-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/static/icons/seal-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

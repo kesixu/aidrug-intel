@@ -1,52 +1,45 @@
-# AGENTS.md — AI for Science 大陆情报系统
+# AGENTS.md — 见微 · AI for Science 大陆情报系统
 
-> 继承 `~/projects/AGENTS.md`
+> 继承 `~/projects/AGENTS.md`。产品/架构全貌见 `README.md` 与 `docs/plans/2026-07-07-rebuild-v1.md`。
 
 ## 定位
 
-AI for Science 大陆情报追踪看板。Phase 1 聚焦北京 · 亦庄 BioPark。
-为 AstraZeneca Beijing 职业决策 + TrustPathBot 市场定位 + UK vs 大陆定居决策提供持续情报支持。
+私人 AI 情报分析师（单用户产品）。自动采集大陆 AI4S/生物医药政策与企业动态 → DeepSeek 按用户画像逐条深读打分 → 晨报/情报流/对话/进化。
+服务用户三个决策：AZ 北京（亦庄）职业机会、TrustPathBot 市场定位、UK vs 大陆定居。
 
-## 技术栈
+## 技术栈与硬约束
 
-- 后端：FastAPI + SQLite（`app/main.py`）
-- 前端：Vanilla JS SPA（`static/index.html` + `static/js/app.js`）
-- 部署：kumo VPS，端口 8010，nginx 反代
-- 域名：`aidrug.kesixu.com`
+- FastAPI + SQLAlchemy 2.0 + SQLite（WAL + FTS5/jieba）；前端 Vanilla ES modules（**禁止引入 React/Vue/jQuery/构建工具**）
+- LLM：DeepSeek `v4-flash`（批量分析）/ `v4-pro`（晨报/对话/进化），key 只放 `.env`（**绝不入 git**）
+- 调度：APScheduler **进程内** → uvicorn **必须单 worker**，勿加 `--workers`
+- 服务器是 UTC；所有调度显式 `Asia/Shanghai`，存储用 UTC ISO 字符串
+- 部署：kumo VPS 端口 8010，systemd `aidrug`，nginx basic-auth 反代 `aidrug.kesixu.com`
+- 依赖装在系统 python3（`pip3 install --user`），不用 venv
 
-## 文件结构
+## 结构（改哪里）
 
 ```
-app/main.py          — FastAPI 路由
-app/models.py        — SQLAlchemy 模型
-static/index.html    — 前端入口
-static/css/style.css — 样式
-static/js/app.js     — 前端逻辑
-data/aidrug.db       — SQLite 数据库（gitignored）
+config/sources.yml     加/改情报源（声明式；特殊结构→ app/ingest/parsers.py 加解析函数）
+app/ingest/            抓取流水线（fetcher/parsers/registry/pipeline）
+app/llm/               client(DeepSeek) / analyst(逐条深读) / briefing / chatsvc / evolver
+app/api/               /api/v1 路由（feed/brief/chat/profile/system）
+app/scheduler.py       定时任务（采集tick/补分析/晨报07:30/进化周日21:00）
+app/seeds.py           决策维度/画像/实体种子 + v0.1 数据导入
+static/                前端：css/app.css 设计令牌；js/views/* 五视图；js/app.js 路由外壳
+tests/                 pytest（改核心逻辑必须跑：python3 -m pytest tests/ -q）
 ```
 
-## 启动
+## 领域规则
 
-```bash
-# 生产环境用 systemd
-sudo systemctl start aidrug
+- 条目评分：`final = 0.55·维度加权 + 0.25·importance + 0.20·来源权威`；分级阈值 75/60/45（改动要同步 analyst.py 与前端印章徽记语义）
+- 去重：URL sha1 硬去重 + 标题实义词 Jaccard ≥0.7 软去重（`_TITLE_STOP` 剔除公文模板词，改前先看 tests/test_textutil.py 的校准样例）
+- 媒体源必须 `gate: true`（画像关键词门控）；政府源不门控
+- LLM 输出全部过 `_normalize` 钳制；进化建议只入 pending，**绝不静默改画像**
+- 单源故障必须隔离（pipeline 已兜底），新代码不得破坏此性质
 
-# 开发环境
-cd /home/oliver/projects/aidrug
-/usr/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
-```
+## 上线前检查
 
-注意：Python 依赖安装在系统 python3（`/usr/bin/python3`），不在 Hermes venv 中。
-
-## 数据 Schema
-
-见 `app/models.py` 的 `IntelEntry`。核心字段：
-- id: intel_YYYYMMDD_NNN
-- relevance_score: {overall, az_beijing, trustpathbot, talent_program, funding_opportunity}
-- policy_family + policy_stage 用于生命周期追踪
-
-## 禁止
-
-- 不要引入 React/Vue/jQuery
-- 不要在 git tracked 文件里写 API key
-- 部署前跑冒烟测试
+1. `python3 -m pytest tests/ -q` 全绿
+2. 冒烟：`curl -s localhost:8010/healthz`、`/api/v1/feed?limit=1`、`/api/v1/system/status`
+3. 重启后 `journalctl -u aidrug -n 20` 无异常、`scheduler.started` 事件在场
+4. 涉及 auth/抓取行为的改动先跑 `/security-review`
