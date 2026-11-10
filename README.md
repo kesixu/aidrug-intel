@@ -34,6 +34,7 @@ AI 分析师（deepseek-flash）
 
 ```bash
 # 依赖（系统 python3，本项目约定不用 venv）
+# fastapi / starlette 锁在 Kumo 的 0.139.0 / 1.3.1，不要单独升级
 pip3 install --user -r requirements.txt
 
 # 配置（.env 已 gitignore）

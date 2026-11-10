@@ -1,6 +1,7 @@
 """界面依赖的启动与 SSE 契约。不改 API 形状，只锁住别被缓冲或环境变量卡住。"""
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -8,6 +9,12 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def test_chat_stream_is_not_gzipped(client, monkeypatch):
@@ -36,7 +43,7 @@ def test_boots_with_key_only_env(tmp_path):
     env["DEEPSEEK_API_KEY"] = "sk-test-only"
     env["AIDRUG_DB_PATH"] = str(tmp_path / "boot.db")
     env["AIDRUG_LOG_DIR"] = str(tmp_path / "logs")
-    port = "8766"
+    port = str(_free_port())
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", port],
         cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
