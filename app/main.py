@@ -6,7 +6,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.gzip import GZipMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -36,6 +36,9 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="见微 · AI for Science 大陆情报系统", version="1.0.0",
               lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
+# Starlette 1.3.1 的 GZipMiddleware 只接受 minimum_size / compresslevel，
+# 并且已经跳过 text/event-stream（攒包会卡住对话的第一帧）。不要加构造参数。
+# nginx 侧再关 proxy_buffering，见 nginx-aidrug.conf。
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.include_router(api_router)
 
