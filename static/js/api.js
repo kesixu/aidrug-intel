@@ -52,36 +52,60 @@ export const api = {
   decideSuggestion: (id, decision) => req(`/evolution/suggestions/${id}/${decision}`, { method: 'POST' }),
 };
 
-/* SSE：POST /chat/stream，回调 onMeta/onThinking/onDelta/onError，返回完成 Promise */
-export async function chatStream(message, sessionId, { onMeta, onThinking, onDelta, onError }) {
-  const r = await fetch(BASE + '/chat/stream', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, session_id: sessionId }),
-  });
+/* SSE：POST /chat/stream。signal 可中止；末包没有换行也会被读完。 */
+export async function chatStream(message, sessionId, { onMeta, onThinking, onDelta, onError, onDone, signal } = {}) {
+  let r;
+  try {
+    r = await fetch(BASE + '/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+      body: JSON.stringify({ message, session_id: sessionId }),
+      signal,
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    onError?.(e.message || '连接中断');
+    return;
+  }
   if (!r.ok || !r.body) {
-    onError?.(`连接失败（HTTP ${r.status}）`);
+    let detail = `连接失败（HTTP ${r.status}）`;
+    try { detail = (await r.json()).detail || detail; } catch { /* 非 JSON */ }
+    onError?.(detail);
     return;
   }
   const reader = r.body.getReader();
   const decoder = new TextDecoder();
   let buf = '', event = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const line of lines) {
-      if (line.startsWith('event: ')) event = line.slice(7).trim();
-      else if (line.startsWith('data: ')) {
-        let d;
-        try { d = JSON.parse(line.slice(6)); } catch { continue; }
-        if (event === 'meta') onMeta?.(d);
-        else if (event === 'thinking') onThinking?.(d.s || 0);
-        else if (event === 'delta') onDelta?.(d.text || '');
-        else if (event === 'error') onError?.(d.message || '未知错误');
+  const take = (line) => {
+    const s = line.replace(/\r$/, '');
+    if (!s) { event = ''; return; }
+    if (s.startsWith(':')) return;
+    if (s.startsWith('event:')) { event = s.slice(6).trim(); return; }
+    if (!s.startsWith('data:')) return;
+    let d;
+    try { d = JSON.parse(s.slice(5).trim()); } catch { return; }
+    if (event === 'meta') onMeta?.(d);
+    else if (event === 'thinking') onThinking?.(d.s || 0);
+    else if (event === 'delta') onDelta?.(d.text || '');
+    else if (event === 'error') onError?.(d.message || '未知错误');
+    else if (event === 'done') onDone?.(d);
+  };
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      buf += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buf.split('\n');
+      buf = done ? '' : (lines.pop() ?? '');
+      for (const line of lines) take(line);
+      if (done) {
+        if (buf) take(buf);
+        break;
       }
     }
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    onError?.(e.message || '连接中断');
+  } finally {
+    reader.releaseLock?.();
   }
 }

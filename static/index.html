@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>见微 · AI for Science 情报</title>
   <meta name="description" content="见微知著 —— 你的私人 AI4S 大陆情报分析师">
-  <meta name="theme-color" content="#0a0c10">
+  <meta name="theme-color" content="#f4f0e6">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="见微">
@@ -18,36 +18,52 @@
   <div id="app">
     <aside id="sidebar">
       <div class="brand">
-        <span class="brand-seal">微</span>
+        <span class="brand-seal" aria-hidden="true">微</span>
         <div>
           <div class="brand-name">见微</div>
-          <div class="muted" style="font-size:10.5px;letter-spacing:.08em">AI4S 大陆情报</div>
+          <div class="brand-sub">AI4S 大陆情报</div>
         </div>
       </div>
-      <nav id="side-nav"></nav>
+      <nav id="side-nav" aria-label="主导航"></nav>
       <div class="side-foot" id="side-foot"></div>
     </aside>
 
     <div id="main">
       <header id="topbar">
-        <div class="brand"><span class="brand-seal">微</span><span class="brand-name">见微</span></div>
-        <span class="top-title" id="top-title"></span>
+        <span class="brand-seal" aria-hidden="true">微</span>
+        <span class="top-title" id="top-title">今日</span>
         <span class="spacer"></span>
         <span class="top-date" id="top-date"></span>
-        <span class="health-dot" id="health-dot" onclick="location.hash='#/me'"></span>
+        <button type="button" id="theme-toggle" class="icon-btn js-theme" aria-label="切换主题">自动</button>
+        <button type="button" id="more-toggle" class="icon-btn" aria-label="更多视图" aria-expanded="false">更多</button>
+        <span class="health-dot" id="health-dot" role="link" tabindex="0" title="系统状态"></span>
       </header>
-      <main id="view"></main>
+      <div id="more-pop" class="more-pop" hidden>
+        <button type="button" data-nav="insight">洞察</button>
+        <button type="button" data-nav="atlas">图谱</button>
+      </div>
+      <main id="view" data-view="today"></main>
     </div>
   </div>
 
-  <nav id="tabbar"></nav>
+  <nav id="tabbar" aria-label="手机导航"></nav>
 
   <div id="overlay"></div>
-  <div id="sheet">
+  <div id="sheet" role="dialog" aria-modal="true" aria-label="详情">
     <div class="sheet-handle"></div>
     <div class="sheet-body"></div>
   </div>
-  <div id="toast"></div>
+  <div id="toast" role="status"></div>
+  <div id="help" class="help" hidden>
+    <div class="help-card" role="dialog" aria-label="键盘快捷键">
+      <h2>键盘</h2>
+      <p><kbd>g</kbd> 然后 <kbd>t</kbd> 今日 · <kbd>f</kbd> 情报 · <kbd>q</kbd> 问 · <kbd>c</kbd> 公司 · <kbd>m</kbd> 我的 · <kbd>i</kbd> 洞察 · <kbd>a</kbd> 图谱</p>
+      <p>情报页：<kbd>j</kbd><kbd>k</kbd> 选择 · <kbd>Enter</kbd> 打开 · <kbd>s</kbd> 收藏 · <kbd>f</kbd> 跟进 · <kbd>/</kbd> 搜索</p>
+      <p><kbd>1</kbd> 全部 · <kbd>2</kbd> 必读 · <kbd>3</kbd> 关注 · <kbd>4</kbd> 扫一眼 · <kbd>5</kbd> 归档 · <kbd>6</kbd> 收藏 · <kbd>7</kbd> 跟进 · <kbd>8</kbd> 临期</p>
+      <p><kbd>?</kbd> 打开本页 · <kbd>Esc</kbd> 关闭</p>
+      <button type="button" class="btn small" id="help-close">知道了</button>
+    </div>
+  </div>
 
   <script type="module" src="/static/js/app.js"></script>
 </body>

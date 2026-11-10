@@ -1,6 +1,6 @@
 /* 我的：兴趣画像 / 决策维度 / 关键词 / 进化 / 情报源 / 系统 */
 import { api } from '../api.js';
-import { mdRender, toast } from '../components.js';
+import { errorState, mdRender, skeletons, toast } from '../components.js';
 import { h, relTime } from '../util.js';
 
 export function render(container, ctx) {
@@ -11,6 +11,8 @@ export function render(container, ctx) {
   const srcBox = h('div', { class: 'me-section' });
   const sysBox = h('div', { class: 'me-section' });
 
+  profileBox.append(...skeletons(1));
+  lensBox.append(...skeletons(2));
   container.append(
     h('div', { class: 'section-title' }, '兴趣画像'), profileBox,
     h('div', { class: 'section-title' }, '决策维度权重'), lensBox,
@@ -22,7 +24,7 @@ export function render(container, ctx) {
   /* 画像 + 维度 + 关键词 */
   api.profile().then((p) => {
     const ta = h('textarea', { class: 'narrative' }, p.narrative);
-    profileBox.append(
+    profileBox.replaceChildren(
       h('p', { class: 'muted', style: 'margin-bottom:8px' },
         'AI 分析每条情报时都会带着这段画像。写清楚你是谁、正在做什么决策、关心什么。'),
       ta,
@@ -30,9 +32,10 @@ export function render(container, ctx) {
         h('button', {
           class: 'btn small primary',
           onclick: async (e) => {
-            e.currentTarget.disabled = true;
+            const btn = e.currentTarget;
+            btn.disabled = true;
             try { await api.saveProfile({ narrative: ta.value }); toast('画像已更新，将影响后续所有分析'); } catch (err) { toast(err.message); }
-            e.currentTarget.disabled = false;
+            btn.disabled = false;
           },
         }, '保存画像')));
 
@@ -41,21 +44,22 @@ export function render(container, ctx) {
       const slider = h('input', { type: 'range', min: '0', max: '0.5', step: '0.05', value: l.weight });
       slider.addEventListener('input', () => { val.textContent = Number(slider.value).toFixed(2); });
       return { lens: l, slider, row: h('div', { class: 'weight-row' },
-        h('div', {}, h('span', { class: 'wn' }, l.name), h('span', { class: 'wd' }, l.description.slice(0, 40) + '…')),
+        h('div', {}, h('span', { class: 'wn' }, l.name), h('span', { class: 'wd', title: l.description }, l.description)),
         slider, val) };
     });
-    lensBox.append(
+    lensBox.replaceChildren(
       ...rows.map((r) => r.row),
       h('div', { style: 'text-align:right;margin-top:10px' },
         h('button', {
           class: 'btn small',
           onclick: async (e) => {
-            e.currentTarget.disabled = true;
+            const btn = e.currentTarget;
+            btn.disabled = true;
             try {
               await api.saveLenses(rows.map((r) => ({ id: r.lens.id, weight: Number(r.slider.value), enabled: true })));
               toast('权重已保存，影响后续新条目评分');
             } catch (err) { toast(err.message); }
-            e.currentTarget.disabled = false;
+            btn.disabled = false;
           },
         }, '保存权重')));
 
@@ -76,12 +80,13 @@ export function render(container, ctx) {
         h('button', {
           class: 'btn small primary',
           onclick: async (e) => {
-            e.currentTarget.disabled = true;
+            const btn = e.currentTarget;
+            btn.disabled = true;
             try { await api.saveProfile({ keywords: kws }); toast('关键词已保存'); } catch (err) { toast(err.message); }
-            e.currentTarget.disabled = false;
+            btn.disabled = false;
           },
         }, '保存')));
-  }).catch((e) => profileBox.append(h('p', { class: 'muted' }, '加载失败：' + e.message)));
+  }).catch((e) => profileBox.replaceChildren(errorState('画像没加载出来', e.message, () => location.reload())));
 
   /* 进化 */
   function loadEvolution() {
@@ -92,7 +97,8 @@ export function render(container, ctx) {
         h('button', {
           class: 'btn small', style: 'margin-bottom:10px',
           onclick: async (e) => {
-            e.currentTarget.disabled = true; e.currentTarget.textContent = '进化中…约20秒';
+            const btn = e.currentTarget;
+            btn.disabled = true; btn.textContent = '进化中…约20秒';
             try { await api.evolutionRun(); toast('进化完成'); loadEvolution(); } catch (err) { toast(err.message); loadEvolution(); }
           },
         }, '立即运行一次进化'));
@@ -102,7 +108,7 @@ export function render(container, ctx) {
         h('p', { class: 'muted mono', style: 'margin-bottom:6px' }, relTime(latest.ran_at)),
         h('div', { class: 'md', style: 'font-size:13.5px', html: mdRender(latest.report_md) }),
         ...latest.suggestions.map((s) => suggestionCard(s, loadEvolution))));
-    }).catch(() => {});
+    }).catch((e) => evoBox.replaceChildren(errorState('进化记录没加载出来', e.message, loadEvolution)));
   }
   loadEvolution();
 
@@ -114,7 +120,8 @@ export function render(container, ctx) {
           h('button', {
             class: 'btn small',
             onclick: async (e) => {
-              e.currentTarget.disabled = true; e.currentTarget.textContent = '抓取中…可能需要1-2分钟';
+              const btn = e.currentTarget;
+              btn.disabled = true; btn.textContent = '抓取中…可能需要1-2分钟';
               try { const r = await api.ingestAll(); const n = r.results.reduce((x, y) => x + (y.new || 0), 0); toast(`抓取完成，新增 ${n} 条，正在后台分析`); } catch (err) { toast(err.message); }
               loadSources();
             },
@@ -134,12 +141,13 @@ export function render(container, ctx) {
           s.enabled ? h('button', {
             class: 'btn small ghost',
             onclick: async (e) => {
-              e.currentTarget.disabled = true;
+              const btn = e.currentTarget;
+              btn.disabled = true;
               try { const r = await api.fetchSource(s.id); toast(`${s.name}：+${r.new || 0} 条`); } catch (err) { toast(err.message); }
               loadSources();
             },
           }, '抓取') : null)));
-    }).catch(() => {});
+    }).catch((e) => srcBox.replaceChildren(errorState('情报源没加载出来', e.message, loadSources)));
   }
   loadSources();
 
@@ -154,16 +162,13 @@ export function render(container, ctx) {
       row('主题', ''),
       h('div', { style: 'display:flex;gap:8px;margin-top:4px' },
         ['auto', 'dark', 'light'].map((m) => h('button', {
+          type: 'button',
           class: `chip chip-btn ${(localStorage.getItem('theme') || 'auto') === m ? 'active' : ''}`,
-          onclick: (e) => {
-            localStorage.setItem('theme', m);
-            window.__applyTheme();
-            sysBox.querySelectorAll('.chip-btn').forEach((c) => c.classList.remove('active'));
-            e.currentTarget.classList.add('active');
-          },
+          'data-theme-choice': m,
+          onclick: () => { localStorage.setItem('theme', m); window.__applyTheme(); },
         }, { auto: '跟随系统', dark: '暗色', light: '亮色' }[m]))),
     ));
-  }).catch(() => {});
+  }).catch((e) => sysBox.replaceChildren(errorState('系统状态没加载出来', e.message, () => location.reload())));
 
   function row(k, v) {
     return h('div', { style: 'display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:13.5px' },

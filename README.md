@@ -42,7 +42,7 @@ echo 'DEEPSEEK_API_KEY=sk-...' > .env
 # 开发
 python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8010 --reload
 
-# 测试
+# 测试（含无头浏览器冒烟；本机有 Chrome，或先 python3 -m playwright install chromium）
 python3 -m pytest tests/ -q
 
 # 手动采集/分析（不经 Web）
@@ -50,7 +50,15 @@ python3 -m app.ingest.pipeline --all
 python3 -m app.llm.analyst
 ```
 
-生产：`sudo systemctl restart aidrug`（unit 见 `aidrug.service`；**必须单 worker**，调度器在进程内）。
+生产（在 Kumo 上）：
+
+```bash
+cd /home/oliver/projects/aidrug
+git pull
+sudo systemctl restart aidrug
+```
+
+unit 见 `aidrug.service`。**必须单 worker**，调度器在进程内，不要加 `--workers`。nginx 配置见 `nginx-aidrug.conf`：整站 basic auth，`/api/v1/chat/stream` 单独关掉 `proxy_buffering`，避免 SSE 被攒住。
 
 ## 关键文件
 
@@ -61,11 +69,30 @@ python3 -m app.llm.analyst
 | `app/llm/` | DeepSeek 客户端、分析师、晨报、对话、进化 |
 | `app/api/` | REST API（/api/v1，文档 /api/docs） |
 | `app/scheduler.py` | 进程内调度（Asia/Shanghai） |
-| `static/` | 前端（无构建 Vanilla ES modules） |
+| `static/` | 前端（无构建 Vanilla ES modules，设计令牌在 `static/css/app.css`） |
 | `static/js/data/companies.js` | 药企深读档案（「公司」专栏数据源，加一家公司=加一条对象） |
 | `docs/plans/2026-07-07-rebuild-v1.md` | 完整设计文档 |
 | `docs/research/` | 外部技术报告/论文的深度分析（含原件索引） |
 | `data/raw/` | 外部原件（PDF/文本，gitignored） |
+
+## 界面
+
+2026-11 这一轮只改阅读体验，API 形状没变。
+
+- 今日按北京时间。先放临期，再放必读卡片，晨报正文在下面，不用先翻完长文才看见截止日。
+- 情报可以同时按级别、分类、收藏、跟进、临期筛，搜索和筛选叠在一起。桌面用 `j` `k` 移动、回车打开、`s` 收藏、`f` 跟进、`/` 搜索，`g` 再加一个字母换页，`?` 看全部快捷键。
+- 问是 SSE。`[n]` 一出现就能点。换会话不刷新整页。
+- 手机底部五个键：今日、情报、问、公司、我的。洞察和图谱在顶栏「更多」里，桌面侧栏仍是全部入口。
+- 颜色、字号、间距都是 `app.css` 里的变量。暗色默认，亮色跟系统或在「我的」里切换。没有构建步骤。
+
+本地看界面（不调用 DeepSeek）：
+
+```bash
+AIDRUG_DB_PATH=/tmp/aidrug-demo.db AIDRUG_SCHEDULER_ENABLED=false \
+  DEEPSEEK_API_KEY=sk-demo python3 scripts/seed_fixture.py
+AIDRUG_DB_PATH=/tmp/aidrug-demo.db AIDRUG_SCHEDULER_ENABLED=false \
+  DEEPSEEK_API_KEY=sk-demo python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+```
 
 ## 运维速查
 

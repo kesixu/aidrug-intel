@@ -60,13 +60,24 @@ export function mdRender(src) {
   return out.join('\n');
 }
 
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
+const SHANGHAI = 'Asia/Shanghai';
+
+/* 晨报、截止日、顶栏日期都按北京时间，不跟浏览器本地时区走。 */
+export function shanghaiToday(d = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: SHANGHAI, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(d);
+}
 
 export function fmtDateCN(d = new Date()) {
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  const p = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: SHANGHAI, year: 'numeric', month: 'numeric', day: 'numeric',
+  }).formatToParts(d);
+  const g = (t) => p.find((x) => x.type === t)?.value || '';
+  return `${g('year')}年${g('month')}月${g('day')}日`;
 }
 export function weekdayCN(d = new Date()) {
-  return `星期${WEEKDAYS[d.getDay()]}`;
+  return new Intl.DateTimeFormat('zh-CN', { timeZone: SHANGHAI, weekday: 'long' }).format(d);
 }
 
 export function relTime(iso) {

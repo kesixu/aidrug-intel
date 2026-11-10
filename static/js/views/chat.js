@@ -1,112 +1,153 @@
-/* 问：流式对话 + 引用 + 会话历史 */
+/* 问：SSE 流式，[n] 用事件委托，换会话不刷新整页。 */
 import { api, chatStream } from '../api.js';
-import { bindMdRefs, mdRender, openSheet, toast } from '../components.js';
+import { delegateRefs, mdRender, openSheet, toast } from '../components.js';
 import { h } from '../util.js';
 
-const state = { sessionId: null, streaming: false };
+const state = { sessionId: null };
 
 export function render(container, ctx) {
   container.classList.add('chat-mode');
   const scroll = h('div', { class: 'chat-scroll' });
-  const input = h('textarea', { rows: 1, placeholder: '问见微：政策、公司、申报窗口…', enterkeyhint: 'send' });
-  const sendBtn = h('button', { class: 'send-btn', title: '发送' },
-    h('span', { html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>' }));
+  const input = h('textarea', { rows: 1, placeholder: '问政策、公司、申报窗口', 'aria-label': '提问', enterkeyhint: 'send' });
+  const sendBtn = h('button', { type: 'button', class: 'send-btn', title: '发送', 'aria-label': '发送' }, '发送');
   const inputWrap = h('div', { class: 'chat-input-wrap' },
     h('div', { class: 'chat-input' },
       h('button', {
-        class: 'icon-btn', title: '会话历史', style: 'border:none;background:none;width:34px;height:34px',
+        type: 'button', class: 'icon-btn', title: '会话', 'aria-label': '会话历史',
         onclick: showHistory,
-      }, h('span', { html: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 3"/></svg>' })),
+      }, '会话'),
       input, sendBtn));
   container.append(scroll, inputWrap);
 
+  let streaming = false;
+  let abort = null;
+  const cites = new WeakMap();
+
+  delegateRefs(scroll, {
+    onOpenItem: ctx.openItem,
+    citationsOf: (host) => cites.get(host) || [],
+  });
+
   input.addEventListener('input', () => {
     input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 110) + 'px';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
   });
-  sendBtn.addEventListener('click', send);
+  sendBtn.addEventListener('click', () => { if (streaming) stop(); else send(); });
 
   if (state.sessionId) {
     api.session(state.sessionId)
       .then((s) => { s.messages.forEach((m) => appendMsg(m.role, m.content, m.citations)); scrollBottom(); })
       .catch(() => { state.sessionId = null; showWelcome(); });
-  } else {
-    showWelcome();
-  }
+  } else showWelcome();
 
   function showWelcome() {
+    scroll.replaceChildren(h('div', { class: 'skeleton', 'aria-hidden': 'true' }, h('i'), h('i')));
     api.sessions().then(({ suggested }) => {
       scroll.replaceChildren(
-        h('div', { style: 'padding:26px 4px 14px;text-align:center' },
-          h('div', { class: 'brand-seal', style: 'width:52px;height:52px;font-size:28px;border-radius:13px;margin:0 auto 12px' }, '问'),
-          h('p', { style: 'font-family:var(--font-display);font-size:18px;font-weight:700' }, '问你的私人情报分析师'),
-          h('p', { class: 'muted', style: 'margin-top:4px' }, '回答基于已收录情报，标注 [n] 引用可点击溯源')),
-        ...suggested.map((q) => h('button', { class: 'suggest-card', onclick: () => { input.value = q; send(); } }, q)));
-    }).catch(() => {});
+        h('div', { class: 'chat-welcome' },
+          h('p', { class: 'kicker' }, '问'),
+          h('h1', {}, '问你的情报分析师'),
+          h('p', { class: 'muted' }, '回答来自己收录的情报。句末的 [n] 可以点开原文。')),
+        ...(suggested || []).map((q) => h('button', {
+          type: 'button', class: 'suggest-card',
+          onclick: () => { input.value = q; send(); },
+        }, q)));
+    }).catch((e) => {
+      scroll.replaceChildren(h('div', { class: 'error-box' },
+        h('p', { class: 'empty-title' }, '提问入口没打开'),
+        h('p', { class: 'muted' }, e.message),
+        h('button', { type: 'button', class: 'btn small', onclick: showWelcome }, '重试')));
+    });
   }
 
   function appendMsg(role, content, citations = []) {
-    const bubble = h('div', { class: 'bubble' });
+    const bubble = h('div', { class: 'bubble', 'data-cite-host': '1' });
+    cites.set(bubble, citations || []);
     if (role === 'assistant') {
       const md = h('div', { class: 'md', html: mdRender(content) });
-      bindMdRefs(md, { onOpenItem: ctx.openItem, citations });
       bubble.append(md);
-      if (citations?.length) {
-        bubble.append(h('div', { class: 'cite-strip' }, citations.map((c) =>
-          h('button', { class: 'chip chip-btn', onclick: () => ctx.openItem(c.item_id) },
-            `[${c.n}] ${c.title.slice(0, 18)}${c.title.length > 18 ? '…' : ''}`))));
-      }
-    } else {
-      bubble.textContent = content;
-    }
+      if (citations?.length) bubble.append(citeStrip(citations));
+    } else bubble.textContent = content;
     const msg = h('div', { class: `msg ${role}` }, bubble);
     scroll.append(msg);
     return bubble;
   }
 
+  function citeStrip(citations) {
+    return h('div', { class: 'cite-strip' }, citations.map((c) =>
+      h('button', {
+        type: 'button', class: 'chip chip-btn',
+        onclick: () => ctx.openItem(c.item_id),
+      }, `[${c.n}] ${c.title}`)));
+  }
+
+  function scrollBottom() {
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+
+  function stop() {
+    abort?.abort();
+  }
+
   async function send() {
     const text = input.value.trim();
-    if (!text || state.streaming) return;
-    input.value = ''; input.style.height = 'auto';
-    if (scroll.querySelector('.suggest-card')) scroll.replaceChildren();
+    if (!text || streaming) return;
+    input.value = '';
+    input.style.height = 'auto';
+    if (scroll.querySelector('.suggest-card, .chat-welcome')) scroll.replaceChildren();
     appendMsg('user', text);
-    scrollBottom();
 
-    state.streaming = true;
-    sendBtn.disabled = true;
+    streaming = true;
+    sendBtn.textContent = '停止';
+    sendBtn.setAttribute('aria-label', '停止');
     const bubble = appendMsg('assistant', '');
     const md = bubble.querySelector('.md');
     md.classList.add('typing-cursor');
-    let acc = '', citations = [];
+    md.textContent = '在想…';
+    let acc = '';
+    let citations = [];
+    abort = new AbortController();
+    scrollBottom();
     try {
       await chatStream(text, state.sessionId, {
-        onMeta: (m) => { state.sessionId = m.session_id; citations = m.citations || []; },
-        onThinking: (s) => { if (!acc) md.textContent = s ? `思考中… ${s}s` : '思考中…'; },
+        signal: abort.signal,
+        onMeta: (m) => {
+          state.sessionId = m.session_id;
+          citations = m.citations || [];
+          cites.set(bubble, citations);
+        },
+        onThinking: (s) => { if (!acc) md.textContent = s ? `在想… ${s}s` : '在想…'; },
         onDelta: (t) => {
           acc += t;
           md.innerHTML = mdRender(acc);
           scrollBottom();
         },
-        onError: (msg) => { acc += `\n> ⚠ ${msg}`; md.innerHTML = mdRender(acc); },
+        onError: (msg) => {
+          acc += (acc ? '\n\n' : '') + `> ${msg}`;
+          md.innerHTML = mdRender(acc);
+        },
+        onDone: () => {},
       });
     } catch (e) {
-      toast('对话失败：' + e.message);
+      if (e.name !== 'AbortError') toast('对话中断：' + e.message);
+      else if (!acc) acc = '已停止。';
     } finally {
+      streaming = false;
+      abort = null;
+      sendBtn.textContent = '发送';
+      sendBtn.setAttribute('aria-label', '发送');
       md.classList.remove('typing-cursor');
-      md.innerHTML = mdRender(acc);
-      bindMdRefs(md, { onOpenItem: ctx.openItem, citations });
+      if (!acc) {
+        md.innerHTML = mdRender('没有得到回答。');
+      } else md.innerHTML = mdRender(acc);
+      cites.set(bubble, citations);
       const used = new Set([...acc.matchAll(/\[(\d{1,2})\]/g)].map((m) => parseInt(m[1], 10)));
       const kept = citations.filter((c) => used.has(c.n));
-      if (kept.length) {
-        bubble.append(h('div', { class: 'cite-strip' }, kept.map((c) =>
-          h('button', { class: 'chip chip-btn', onclick: () => ctx.openItem(c.item_id) },
-            `[${c.n}] ${c.title.slice(0, 18)}${c.title.length > 18 ? '…' : ''}`))));
-      }
-      state.streaming = false;
-      sendBtn.disabled = false;
+      bubble.querySelector('.cite-strip')?.remove();
+      if (kept.length) bubble.append(citeStrip(kept));
       scrollBottom();
     }
   }
@@ -114,22 +155,37 @@ export function render(container, ctx) {
   function showHistory() {
     api.sessions().then(({ sessions }) => {
       openSheet(h('div', {},
-        h('div', { class: 'detail-title', style: 'font-size:17px' }, '会话历史'),
+        h('h2', { class: 'detail-title' }, '会话'),
         h('button', {
-          class: 'btn', style: 'width:100%;margin-bottom:10px',
-          onclick: () => { state.sessionId = null; location.reload(); },
-        }, '＋ 新对话'),
-        sessions.length ? sessions.map((s) => h('div', {
-          class: 'lineage-entry', style: 'padding:10px 0',
-          onclick: () => { state.sessionId = s.id; location.hash = '#/chat'; location.reload(); },
-        }, h('span', { class: 'dt' }, s.updated_at.slice(5, 10)), h('span', {}, s.title)))
-          : h('p', { class: 'muted' }, '暂无历史会话')));
+          type: 'button', class: 'btn',
+          onclick: () => { state.sessionId = null; showWelcome(); document.getElementById('overlay').click(); },
+        }, '新对话'),
+        sessions.length
+          ? sessions.map((s) => h('button', {
+            type: 'button', class: 'lineage-entry history-item',
+            onclick: () => openSession(s.id),
+          }, h('span', { class: 'dt' }, (s.updated_at || '').slice(5, 10)), h('span', {}, s.title)))
+          : h('p', { class: 'muted' }, '还没有历史会话')));
     }).catch((e) => toast(e.message));
   }
 
-  function scrollBottom() {
-    scroll.scrollTop = scroll.scrollHeight;
+  function openSession(id) {
+    state.sessionId = id;
+    document.getElementById('overlay').click();
+    scroll.replaceChildren(h('div', { class: 'skeleton', 'aria-hidden': 'true' }, h('i'), h('i')));
+    api.session(id).then((s) => {
+      scroll.replaceChildren();
+      s.messages.forEach((m) => appendMsg(m.role, m.content, m.citations));
+      scrollBottom();
+    }).catch((e) => {
+      scroll.replaceChildren(h('div', { class: 'error-box' },
+        h('p', { class: 'empty-title' }, '这场会话没打开'),
+        h('p', { class: 'muted' }, e.message)));
+    });
   }
 
-  return () => container.classList.remove('chat-mode');
+  return () => {
+    abort?.abort();
+    container.classList.remove('chat-mode');
+  };
 }
